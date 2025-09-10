@@ -26,8 +26,12 @@ class Player(ctx: Context, sx: Float, sy: Float) {
     private var bmpRun: Bitmap? = null
     private var bmpJump: Bitmap? = null
     private var bmpFall: Bitmap? = null
+    private var bmpIdleFlipped: Bitmap? = null
+    private var bmpRunFlipped: Bitmap? = null
+    private var bmpJumpFlipped: Bitmap? = null
+    private var bmpFallFlipped: Bitmap? = null
     private var framesIdle = 1
-    private var framesRun = 1
+    private var framesRun = 10 // Cập nhật cứng giá trị dựa trên sprite sheet mới
     private var curFrame = 0
     private var timer = 0L
     private val frameDt = 120L
@@ -47,9 +51,16 @@ class Player(ctx: Context, sx: Float, sy: Float) {
 
     init {
         bmpIdle = loadBmp(ctx, "idle_32x32")
-        bmpRun  = loadBmp(ctx, "run_32x32")
+        bmpRun = loadBmp(ctx, "run_32x32")
         bmpJump = loadBmp(ctx, "jump_32x32")
         bmpFall = loadBmp(ctx, "fall_32x32")
+
+        val flipMatrix = android.graphics.Matrix().apply { preScale(-1f, 1f) }
+
+        bmpIdle?.let { bmpIdleFlipped = Bitmap.createBitmap(it, 0, 0, it.width, it.height, flipMatrix, false) }
+        bmpRun?.let { bmpRunFlipped = Bitmap.createBitmap(it, 0, 0, it.width, it.height, flipMatrix, false) }
+        bmpJump?.let { bmpJumpFlipped = Bitmap.createBitmap(it, 0, 0, it.width, it.height, flipMatrix, false) }
+        bmpFall?.let { bmpFallFlipped = Bitmap.createBitmap(it, 0, 0, it.width, it.height, flipMatrix, false) }
 
         bmpIdle?.let { b ->
             if (b.height > 0 && b.width >= b.height) framesIdle = b.width / b.height
@@ -57,7 +68,7 @@ class Player(ctx: Context, sx: Float, sy: Float) {
             height = b.height.toFloat()
         } ?: run {
             bmpRun?.let { b ->
-                if (b.height > 0 && b.width >= b.height) framesRun = b.width / b.height
+                if (b.height > 0 && b.width >= b.height) framesRun = b.width / b.height // Cập nhật tự động
                 width = (b.width / max(1, framesRun)).toFloat()
                 height = b.height.toFloat()
             }
@@ -125,46 +136,45 @@ class Player(ctx: Context, sx: Float, sy: Float) {
     fun getRect() = RectF(x, y, x + width, y + height)
 
     fun draw(canvas: Canvas, paint: Paint) {
-        val bmp = when {
-            vy != 0f && vy < 0f -> bmpJump
-            vy != 0f && vy > 0f -> bmpFall
-            movingState != 0 -> bmpRun
-            else -> bmpIdle
+        var bmp = when {
+            vy != 0f && vy < 0f -> if (facing >= 0) bmpJump else bmpJumpFlipped
+            vy != 0f && vy > 0f -> if (facing >= 0) bmpFall else bmpFallFlipped
+            movingState != 0 -> if (facing >= 0) bmpRun else bmpRunFlipped
+            else -> if (facing >= 0) bmpIdle else bmpIdleFlipped
         }
 
-        // Làm tròn tọa độ để tránh sub-pixel rendering gây sọc
-        val drawX = kotlin.math.round(x)
-        val drawY = kotlin.math.round(y)
-        val drawWidth = kotlin.math.round(width)
-        val drawHeight = kotlin.math.round(height)
+        // Làm tròn tọa độ và kích thước để tránh sub-pixel artifacts
+        val drawX = kotlin.math.round(x).toInt().toFloat()
+        val drawY = kotlin.math.round(y).toInt().toFloat()
+        val drawWidth = kotlin.math.round(width).toInt().toFloat()
+        val drawHeight = kotlin.math.round(height).toInt().toFloat()
 
         val dst = RectF(drawX, drawY, drawX + drawWidth, drawY + drawHeight)
 
         if (bmp != null) {
-            // number of frames for this bitmap
             val frames = when (bmp) {
-                bmpRun -> framesRun
-                bmpIdle -> framesIdle
+                bmpRun, bmpRunFlipped -> framesRun
+                bmpIdle, bmpIdleFlipped -> framesIdle
                 else -> 1
             }
 
             val fw = if (frames > 0) (bmp.width / frames) else bmp.width
             val fh = bmp.height
-            val frameIndex = if (frames > 0) (curFrame % frames) else 0
-            val srcLeft = frameIndex * fw
+            var frameIndex = if (frames > 0) (curFrame % frames) else 0
 
-            // FIXED: Đảm bảo không có frame bleeding
+            // Nếu facing < 0, đảo ngược frame index vì sheet flipped đảo order
+            if (facing < 0 && frames > 1) {
+                frameIndex = frames - 1 - frameIndex
+            }
+
+            val srcLeft = frameIndex * fw
             val srcRight = kotlin.math.min(srcLeft + fw, bmp.width)
             val src = Rect(srcLeft, 0, srcRight, fh)
 
-            if (facing < 0) {
-                canvas.save()
-                canvas.scale(-1f, 1f, dst.centerX(), dst.centerY())
-                canvas.drawBitmap(bmp, src, dst, paintBitmap)
-                canvas.restore()
-            } else {
-                canvas.drawBitmap(bmp, src, dst, paintBitmap)
-            }
+            // Debug log (xóa sau khi test)
+            Log.d("RENDER_DBG", "Drawing frame=$frameIndex, srcLeft=$srcLeft, srcRight=$srcRight, facing=$facing")
+
+            canvas.drawBitmap(bmp, src, dst, paintBitmap)
         } else {
             // Fallback rectangle nếu không có sprite
             paint.style = Paint.Style.FILL
