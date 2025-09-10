@@ -14,16 +14,23 @@ import kotlin.math.min
 class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback {
     private var thread: GameThread = GameThread(holder, this)
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val hudPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = 28f }
+    private val hudPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.WHITE
+        textSize = 28f
+        setShadowLayer(2f, 2f, 2f, Color.BLACK)  // Text shadow
+    }
 
     private val tileMap = TileMap(context)
     private val player = Player(context, 200f, 0f)
 
-    // camera (world coords)
+    // Camera với smooth movement
     private var cameraX = 0f
     private var cameraY = 0f
+    private var targetCameraX = 0f
+    private var targetCameraY = 0f
+    private val cameraSpeed = 5f  // Camera lerp speed
 
-    // scale/center
+    // Scale/center
     private var worldScale = 1f
     private var screenOffsetX = 0f
     private var screenOffsetY = 0f
@@ -37,35 +44,54 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
     private var screenW = 1f
     private var screenH = 1f
 
-    // paints for buttons
+    // Paints for buttons với shadow effects
     private val btnPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val btnTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE; textSize = 36f; textAlign = Paint.Align.CENTER
+        color = Color.WHITE
+        textSize = 36f
+        textAlign = Paint.Align.CENTER
+        setShadowLayer(2f, 2f, 2f, Color.BLACK)
     }
+
+    // Game stats
+    private var score = 0
+    private var lives = 3
 
     init {
         holder.addCallback(this)
         isFocusable = true
+
+        // Tắt hardware acceleration để tránh rendering issues với pixel art
+        setLayerType(LAYER_TYPE_SOFTWARE, null)
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
         screenW = width.toFloat()
         screenH = height.toFloat()
 
-        val btnSize = min(screenW, screenH) * 0.16f
-        val margin = btnSize * 0.18f
+        // Responsive button sizing
+        val btnSize = min(screenW, screenH) * 0.14f
+        val margin = btnSize * 0.2f
+
+        // Position buttons better for Mario-style game
         btnLeft.set(margin, screenH - margin - btnSize, margin + btnSize, screenH - margin)
-        btnRight.set(btnLeft.right + margin * 0.6f, btnLeft.top, btnLeft.right + margin * 0.6f + btnSize, btnLeft.bottom)
+        btnRight.set(btnLeft.right + margin * 0.4f, btnLeft.top, btnLeft.right + margin * 0.4f + btnSize, btnLeft.bottom)
         btnJump.set(screenW - margin - btnSize, screenH - margin - btnSize, screenW - margin, screenH - margin)
 
-        // compute worldScale so world fits screen (keep aspect ratio)
+        // Compute worldScale so world fits screen (keep aspect ratio)
         worldScale = min(screenW / tileMap.worldWidth, screenH / tileMap.worldHeight)
         screenOffsetX = (screenW - tileMap.worldWidth * worldScale) / 2f
         screenOffsetY = (screenH - tileMap.worldHeight * worldScale) / 2f
 
-        // place player on ground after we know player.height
+        // Place player on ground after we know player.height
         player.x = 200f
         player.y = tileMap.getGroundTopY() - player.height
+
+        // Initialize camera
+        targetCameraX = player.x + player.width / 2f - (screenW / worldScale) / 2f
+        targetCameraY = player.y + player.height / 2f - (screenH / worldScale) / 2f
+        cameraX = targetCameraX
+        cameraY = targetCameraY
 
         thread = GameThread(holder, this)
         thread.running = true
@@ -73,72 +99,145 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
+
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         thread.running = false
         var retry = true
         while (retry) {
-            try { thread.join(); retry = false } catch (e: InterruptedException) {}
+            try {
+                thread.join()
+                retry = false
+            } catch (e: InterruptedException) {}
         }
     }
 
     fun update(deltaMs: Long) {
+        // Handle input
         var mv = 0
         if (activePointers.containsValue("left")) mv = -1
         if (activePointers.containsValue("right")) mv = 1
         player.setMoving(mv)
 
+        // Update game objects
         player.update(deltaMs, tileMap)
+        tileMap.update(deltaMs)
 
-        // compute viewport in world units (so camera clamp is correct)
-        val viewportWorldW = width.toFloat() / worldScale
-        val viewportWorldH = height.toFloat() / worldScale
+        // Smooth camera following với viewport clamping
+        val viewportWorldW = screenW / worldScale
+        val viewportWorldH = screenH / worldScale
 
-        cameraX = player.x + player.width / 2f - viewportWorldW / 2f
-        cameraY = player.y + player.height / 2f - viewportWorldH / 2f
+        // Target camera position (follow player)
+        targetCameraX = player.x + player.width / 2f - viewportWorldW / 2f
+        targetCameraY = player.y + player.height / 2f - viewportWorldH / 2f
 
-        cameraX = cameraX.coerceAtLeast(0f)
-        cameraY = cameraY.coerceAtLeast(0f)
-        cameraX = cameraX.coerceAtMost(tileMap.worldWidth - viewportWorldW)
-        cameraY = cameraY.coerceAtMost(tileMap.worldHeight - viewportWorldH)
+        // Clamp target camera to world bounds
+        targetCameraX = targetCameraX.coerceIn(0f, tileMap.worldWidth - viewportWorldW)
+        targetCameraY = targetCameraY.coerceIn(0f, tileMap.worldHeight - viewportWorldH)
+
+        // Smooth camera movement (lerp)
+        val dt = deltaMs / 1000f
+        val lerpFactor = 1f - Math.pow(0.1, (dt * cameraSpeed).toDouble()).toFloat()
+        cameraX += (targetCameraX - cameraX) * lerpFactor
+        cameraY += (targetCameraY - cameraY) * lerpFactor
+
+        // Pixel-perfect camera positioning
+        cameraX = kotlin.math.round(cameraX * worldScale) / worldScale
+        cameraY = kotlin.math.round(cameraY * worldScale) / worldScale
     }
 
     override fun draw(canvas: Canvas) {
         super.draw(canvas)
-        canvas.drawColor(Color.BLACK)
+        canvas.drawColor(Color.rgb(135, 206, 250))  // Sky blue background
 
-        // apply transforms: center -> scale -> translate camera (all in that order)
+        // Apply world transforms
         canvas.save()
         canvas.translate(screenOffsetX, screenOffsetY)
         canvas.scale(worldScale, worldScale)
         canvas.translate(-cameraX, -cameraY)
 
-        // draw world & player in world coords
+        // Draw world objects in world coordinates
         tileMap.draw(canvas)
         player.draw(canvas, paint)
 
         canvas.restore()
 
-        // draw HUD/buttons in screen coordinates (after restore)
-        drawControlButtonVisible(canvas, btnLeft, "◀", activePointers.containsValue("left"))
-        drawControlButtonVisible(canvas, btnRight, "▶", activePointers.containsValue("right"))
-        drawControlButtonVisible(canvas, btnJump, "▲", activePointers.containsValue("jump"))
-
-        // debug/help text
-        hudPaint.color = Color.WHITE
-        canvas.drawText("Use buttons: ← → ▲", 12f, 34f, hudPaint)
+        // Draw HUD in screen coordinates (after restore)
+        drawHUD(canvas)
+        drawControls(canvas)
     }
 
-    private fun drawControlButtonVisible(canvas: Canvas, r: RectF, label: String, pressed: Boolean) {
-        btnPaint.style = Paint.Style.FILL
-        btnPaint.color = if (pressed) Color.argb(220, 20, 160, 90) else Color.argb(200, 60, 60, 60)
-        canvas.drawRoundRect(r, 18f, 18f, btnPaint)
-        btnPaint.style = Paint.Style.STROKE
-        btnPaint.color = Color.argb(220, 0, 0, 0)
-        btnPaint.strokeWidth = 4f
-        canvas.drawRoundRect(r, 18f, 18f, btnPaint)
+    private fun drawHUD(canvas: Canvas) {
+        // HUD Background
+        paint.style = Paint.Style.FILL
+        paint.color = Color.argb(180, 0, 0, 0)
+        canvas.drawRoundRect(12f, 12f, 300f, 80f, 8f, 8f, paint)
 
-        val ty = r.centerY() - (btnTextPaint.descent() + btnTextPaint.ascent()) / 2f
-        canvas.drawText(label, r.centerX(), ty, btnTextPaint)
+        // Score
+        hudPaint.color = Color.YELLOW
+        hudPaint.textSize = 24f
+        canvas.drawText("SCORE", 24f, 35f, hudPaint)
+        hudPaint.color = Color.WHITE
+        canvas.drawText("$score", 24f, 60f, hudPaint)
+
+        // Lives
+        hudPaint.color = Color.RED
+        canvas.drawText("LIVES", 120f, 35f, hudPaint)
+        hudPaint.color = Color.WHITE
+        canvas.drawText("$lives", 120f, 60f, hudPaint)
+
+        // World info
+        hudPaint.color = Color.CYAN
+        canvas.drawText("WORLD 1-1", 200f, 35f, hudPaint)
+
+        // Instructions (only show first few seconds)
+        hudPaint.color = Color.WHITE
+        hudPaint.textSize = 20f
+        canvas.drawText("Use buttons: ← → ↑ to move and jump", 12f, screenH - 20f, hudPaint)
+    }
+
+    private fun drawControls(canvas: Canvas) {
+        drawControlButton(canvas, btnLeft, "←", activePointers.containsValue("left"))
+        drawControlButton(canvas, btnRight, "→", activePointers.containsValue("right"))
+        drawControlButton(canvas, btnJump, "↑", activePointers.containsValue("jump"))
+    }
+
+    private fun drawControlButton(canvas: Canvas, rect: RectF, label: String, pressed: Boolean) {
+        val cornerRadius = 16f
+
+        // Button shadow
+        paint.style = Paint.Style.FILL
+        paint.color = Color.argb(100, 0, 0, 0)
+        canvas.drawRoundRect(
+            rect.left + 4f, rect.top + 4f,
+            rect.right + 4f, rect.bottom + 4f,
+            cornerRadius, cornerRadius, paint
+        )
+
+        // Button background với gradient effect
+        val topColor = if (pressed) Color.rgb(50, 150, 250) else Color.rgb(80, 180, 250)
+        val bottomColor = if (pressed) Color.rgb(30, 100, 200) else Color.rgb(40, 120, 220)
+
+        val shader = android.graphics.LinearGradient(
+            rect.left, rect.top, rect.left, rect.bottom,
+            topColor, bottomColor,
+            android.graphics.Shader.TileMode.CLAMP
+        )
+        paint.shader = shader
+        canvas.drawRoundRect(rect, cornerRadius, cornerRadius, paint)
+        paint.shader = null
+
+        // Button border
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 3f
+        paint.color = if (pressed) Color.rgb(20, 80, 160) else Color.rgb(60, 140, 200)
+        canvas.drawRoundRect(rect, cornerRadius, cornerRadius, paint)
+
+        // Button text
+        val textY = rect.centerY() - (btnTextPaint.descent() + btnTextPaint.ascent()) / 2f
+        btnTextPaint.color = Color.WHITE
+        canvas.drawText(label, rect.centerX(), textY, btnTextPaint)
+
+        paint.style = Paint.Style.FILL  // Reset
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -153,20 +252,35 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
                 val which = whichControl(x, y)
                 if (which != null) {
                     activePointers[pid] = which
-                    if (which == "jump") player.jump()
+                    if (which == "jump") {
+                        player.jump()
+                        // TODO: Add jump sound effect
+                    }
                 } else {
-                    activePointers[pid] = if (x < width / 2f) "left" else "right"
+                    // Fallback touch controls
+                    activePointers[pid] = if (x < screenW / 2f) "left" else "right"
                 }
             }
+
             MotionEvent.ACTION_MOVE -> {
+                // Handle dragging between buttons
                 for (i in 0 until event.pointerCount) {
                     val p = event.getPointerId(i)
                     val x = event.getX(i)
                     val y = event.getY(i)
                     val which = whichControl(x, y)
-                    if (which != null) activePointers[p] = which
+                    if (which != null) {
+                        val oldWhich = activePointers[p]
+                        if (oldWhich != which) {
+                            activePointers[p] = which
+                            if (which == "jump" && oldWhich != "jump") {
+                                player.jump()
+                            }
+                        }
+                    }
                 }
             }
+
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> {
                 activePointers.remove(pid)
             }
@@ -175,15 +289,19 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
     }
 
     private fun whichControl(x: Float, y: Float): String? {
-        if (btnLeft.contains(x, y)) return "left"
-        if (btnRight.contains(x, y)) return "right"
-        if (btnJump.contains(x, y)) return "jump"
-        return null
+        return when {
+            btnLeft.contains(x, y) -> "left"
+            btnRight.contains(x, y) -> "right"
+            btnJump.contains(x, y) -> "jump"
+            else -> null
+        }
     }
 
     fun pause() {
         thread.running = false
-        try { thread.join() } catch (e: InterruptedException) {}
+        try {
+            thread.join()
+        } catch (e: InterruptedException) {}
     }
 
     fun resume() {

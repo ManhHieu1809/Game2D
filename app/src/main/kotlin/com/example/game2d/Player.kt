@@ -6,6 +6,7 @@ import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.RectF
+import android.graphics.Rect
 import android.util.Log
 import kotlin.math.max
 
@@ -37,11 +38,11 @@ class Player(ctx: Context, sx: Float, sy: Float) {
     // current animation frame count (kept in update to keep curFrame in range)
     private var animFrames = 1
 
-    // paint for bitmap drawing: nearest neighbor (no filtering)
+    // paint for bitmap drawing: nearest neighbor (no filtering) - FIXED
     private val paintBitmap = Paint().apply {
-        isFilterBitmap = false
-        isAntiAlias = false
-        isDither = false
+        isFilterBitmap = false  // Tắt filtering để tránh blur
+        isAntiAlias = false     // Tắt anti-alias cho pixel art
+        isDither = false        // Tắt dithering
     }
 
     init {
@@ -62,9 +63,10 @@ class Player(ctx: Context, sx: Float, sy: Float) {
             }
         }
 
-        width = width.coerceIn(16f, 128f)
-        height = height.coerceIn(16f, 128f)
-        Log.d("ASSET_DBG", "Player init: idle=${bmpIdle != null}...pJump != null}, fall=${bmpFall != null}, size=${width}x$height")
+        // Đảm bảo kích thước hợp lý cho Mario-style game
+        width = width.coerceIn(32f, 64f)
+        height = height.coerceIn(32f, 64f)
+        Log.d("ASSET_DBG", "Player init: idle=${bmpIdle != null}, run=${bmpRun != null}, jump=${bmpJump != null}, fall=${bmpFall != null}, size=${width}x$height")
     }
 
     private fun loadBmp(ctx: Context, name: String): Bitmap? {
@@ -75,6 +77,8 @@ class Player(ctx: Context, sx: Float, sy: Float) {
             val opts = BitmapFactory.Options().apply {
                 inScaled = false // prevent automatic density scaling
                 inPreferredConfig = Bitmap.Config.ARGB_8888
+                inDither = false // Tắt dithering
+                inPreferQualityOverSpeed = true
             }
             BitmapFactory.decodeResource(ctx.resources, id, opts)
         } catch (e: Exception) {
@@ -120,7 +124,6 @@ class Player(ctx: Context, sx: Float, sy: Float) {
 
     fun getRect() = RectF(x, y, x + width, y + height)
 
-
     fun draw(canvas: Canvas, paint: Paint) {
         val bmp = when {
             vy != 0f && vy < 0f -> bmpJump
@@ -129,34 +132,47 @@ class Player(ctx: Context, sx: Float, sy: Float) {
             else -> bmpIdle
         }
 
-        val dst = RectF(x, y, x + width, y + height)
+        // Làm tròn tọa độ để tránh sub-pixel rendering gây sọc
+        val drawX = kotlin.math.round(x)
+        val drawY = kotlin.math.round(y)
+        val drawWidth = kotlin.math.round(width)
+        val drawHeight = kotlin.math.round(height)
+
+        val dst = RectF(drawX, drawY, drawX + drawWidth, drawY + drawHeight)
 
         if (bmp != null) {
             // number of frames for this bitmap
-            val frames = if (bmp === bmpRun) framesRun else framesIdle
+            val frames = when (bmp) {
+                bmpRun -> framesRun
+                bmpIdle -> framesIdle
+                else -> 1
+            }
+
             val fw = if (frames > 0) (bmp.width / frames) else bmp.width
             val fh = bmp.height
             val frameIndex = if (frames > 0) (curFrame % frames) else 0
             val srcLeft = frameIndex * fw
-            // avoid bleeding from adjacent frames: ensure last frame uses bitmap.width as right edge
-            val srcRight = if (frames > 0 && frameIndex == frames - 1) bmp.width else (srcLeft + fw)
-            val src = android.graphics.Rect(srcLeft, 0, srcRight, fh)
+
+            // FIXED: Đảm bảo không có frame bleeding
+            val srcRight = kotlin.math.min(srcLeft + fw, bmp.width)
+            val src = Rect(srcLeft, 0, srcRight, fh)
 
             if (facing < 0) {
                 canvas.save()
-                canvas.scale(-1f, 1f, dst.left + dst.width()/2f, dst.top + dst.height()/2f)
+                canvas.scale(-1f, 1f, dst.centerX(), dst.centerY())
                 canvas.drawBitmap(bmp, src, dst, paintBitmap)
                 canvas.restore()
             } else {
                 canvas.drawBitmap(bmp, src, dst, paintBitmap)
             }
         } else {
+            // Fallback rectangle nếu không có sprite
             paint.style = Paint.Style.FILL
-            paint.color = android.graphics.Color.MAGENTA
+            paint.color = android.graphics.Color.RED
             canvas.drawRect(dst, paint)
             paint.color = android.graphics.Color.WHITE
             paint.textSize = 12f
-            canvas.drawText("NO SPRITE", dst.left, dst.top - 6f, paint)
+            canvas.drawText("MARIO", dst.left, dst.top - 6f, paint)
         }
     }
 }
