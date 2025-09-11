@@ -87,19 +87,16 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         btnRight.set(btnLeft.right + margin * 0.6f, btnLeft.top, btnLeft.right + margin * 0.6f + btnSize, btnLeft.bottom)
         btnJump.set(screenW - margin - btnSize, screenH - margin - btnSize, screenW - margin, screenH - margin)
 
-        // === FIXED HERE ===
-        // Scale the world so it fits the SCREEN HEIGHT (no tiny whole-level-fit)
+        // Scale the world so it fits the SCREEN HEIGHT properly
         worldScale = screenH / tileMap.worldHeight
 
-        // optional caps to avoid super large/small scale
-        worldScale = worldScale.coerceIn(0.2f, 3.0f)
+        // Optional caps to avoid super large/small scale
+        worldScale = worldScale.coerceIn(0.5f, 2.0f)
 
-        // We compute offset so that world Y is aligned to top (or center if you prefer)
-        // Center vertically:
+        // Center vertically
         screenOffsetY = (screenH - tileMap.worldHeight * worldScale) / 2f
-        // For X we typically want 0 (camera will scroll horizontally). Start centered on player:
-        screenOffsetX = (screenW - tileMap.worldWidth * worldScale) / 2f
-        // If worldWidth * worldScale is larger than screenW then screenOffsetX will be negative — OK.
+        // For X we typically want 0 (camera will scroll horizontally)
+        screenOffsetX = 0f
     }
 
     fun update(deltaMs: Long) {
@@ -111,45 +108,57 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         player.update(deltaMs, tileMap)
         tileMap.update(deltaMs)
 
-        // compute viewport in world units (so camera clamp is correct)
-        val viewportWorldW = width.toFloat() / worldScale
-        val viewportWorldH = height.toFloat() / worldScale
+        // Compute viewport in world units
+        val viewportWorldW = screenW / worldScale
+        val viewportWorldH = screenH / worldScale
 
-        // Làm tròn camera để tránh ghosting sub-pixel
-        cameraX = round(player.x + player.width / 2f - viewportWorldW / 2f)
-        cameraY = round(player.y + player.height / 2f - viewportWorldH / 2f)
+        // Camera follows player (centered on player)
+        val targetCameraX = player.x + player.width / 2f - viewportWorldW / 2f
+        val targetCameraY = player.y + player.height / 2f - viewportWorldH / 2f
 
+        // Round camera to avoid sub-pixel rendering issues
+        cameraX = round(targetCameraX)
+        cameraY = round(targetCameraY)
+
+        // FIXED: Properly clamp camera so we never show black areas
+        // Left boundary
         cameraX = cameraX.coerceAtLeast(0f)
+        // Right boundary - make sure we don't go past the world
+        cameraX = cameraX.coerceAtMost(max(0f, tileMap.worldWidth - viewportWorldW))
+
+        // Top boundary
         cameraY = cameraY.coerceAtLeast(0f)
-        cameraX = cameraX.coerceAtMost(tileMap.worldWidth - viewportWorldW)
-        cameraY = cameraY.coerceAtMost(tileMap.worldHeight - viewportWorldH)
+        // Bottom boundary
+        cameraY = cameraY.coerceAtMost(max(0f, tileMap.worldHeight - viewportWorldH))
     }
 
     override fun draw(canvas: Canvas) {
         super.draw(canvas)
-        // Clear canvas trước mỗi frame để tránh chồng lấp frame cũ
+        // Clear canvas to prevent frame overlap
         canvas.drawColor(Color.BLACK)
 
-        // apply transforms: center -> scale -> translate camera (all in that order)
+        // Apply transforms: translate offset -> scale -> translate camera
         canvas.save()
         canvas.translate(screenOffsetX, screenOffsetY)
         canvas.scale(worldScale, worldScale)
         canvas.translate(-cameraX, -cameraY)
 
-        // draw world & player in world coords
+        // Draw world & player in world coords
         tileMap.draw(canvas)
         player.draw(canvas, paint)
 
         canvas.restore()
 
-        // draw HUD/buttons in screen coordinates (after restore)
+        // Draw HUD/buttons in screen coordinates (after restore)
         drawControlButtonVisible(canvas, btnLeft, "◀", activePointers.containsValue("left"))
         drawControlButtonVisible(canvas, btnRight, "▶", activePointers.containsValue("right"))
         drawControlButtonVisible(canvas, btnJump, "▲", activePointers.containsValue("jump"))
 
-        // debug/help text
+        // Debug info
         hudPaint.color = Color.WHITE
         canvas.drawText("Use buttons: ← → ▲", 12f, 34f, hudPaint)
+        // Show camera position for debugging
+        canvas.drawText("Camera: (${cameraX.toInt()}, ${cameraY.toInt()})", 12f, 64f, hudPaint)
     }
 
     private fun drawControlButtonVisible(canvas: Canvas, r: RectF, label: String, pressed: Boolean) {

@@ -92,7 +92,7 @@ class Player(ctx: Context, sx: Float, sy: Float) {
             fallFrames = 1
         }
 
-       
+
         if (idleFrameW > 0 && idleFrameH > 0) {
             width = idleFrameW * spriteScale
             height = idleFrameH * spriteScale
@@ -132,25 +132,26 @@ class Player(ctx: Context, sx: Float, sy: Float) {
 
     fun update(dtMs: Long, map: TileMap) {
         val dt = dtMs / 1000f
+
+        // FIXED: Store previous position BEFORE updating
         prevX = x
         prevY = y
 
+        // Apply gravity
         vy += gravity * dt
+
+        // Apply movement
         x += vx * dt
         y += vy * dt
 
-        // cap horizontal speed to reduce tunneling
+        // Cap horizontal speed to reduce tunneling
         val maxSpeed = 420f
         vx = vx.coerceIn(-maxSpeed, maxSpeed)
 
-        // world bounds
-        if (x < 0f) { x = 0f; vx = 0f }
-        if (x + width > map.worldWidth) { x = map.worldWidth - width; vx = 0f }
-
-        // collision resolution
+        // Collision resolution - this will adjust x, y if needed
         map.resolvePlayerCollision(this)
 
-        // animation timer & frame index (choose frames by current state)
+        // Animation timer & frame index (choose frames by current state)
         timer += dtMs
         val targetFrames = when {
             vy < 0f -> jumpFrames

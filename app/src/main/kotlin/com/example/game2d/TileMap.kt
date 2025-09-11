@@ -61,7 +61,6 @@ class TileMap(private val ctx: Context) {
             }
         }
 
-
         // vx negative -> mây trôi sang trái; thay đổi vx để thay đổi tốc độ (parallax)
         clouds.add(Cloud(200f, 100f, -12f, 0.2f))
         clouds.add(Cloud(500f, 80f, -8f, 1.1f))
@@ -197,12 +196,12 @@ class TileMap(private val ctx: Context) {
             }
         }
 
-        // === WORLD BORDERS ===
+        // === WORLD BORDERS (for debug) ===
         paint.color = Color.rgb(20, 20, 20)
-        canvas.drawRect(-20f, -20f, worldWidth + 20f, 0f, paint)
-        canvas.drawRect(-20f, worldHeight, worldWidth + 20f, worldHeight + 20f, paint)
-        canvas.drawRect(-20f, -20f, 0f, worldHeight + 20f, paint)
-        canvas.drawRect(worldWidth, -20f, worldWidth + 20f, worldHeight + 20f, paint)
+        paint.strokeWidth = 2f
+        paint.style = Paint.Style.STROKE
+        canvas.drawRect(0f, 0f, worldWidth, worldHeight, paint)
+        paint.style = Paint.Style.FILL
     }
 
     private fun drawCloud(canvas: Canvas, x: Float, y: Float) {
@@ -242,19 +241,30 @@ class TileMap(private val ctx: Context) {
         val rect = player.getRect()
         var collided = false
 
+        // FIXED: Proper world boundaries collision - check BEFORE moving
+        // Left boundary
+        if (player.x < 0f) {
+            player.x = 0f
+            player.vx = 0f
+            collided = true
+        }
+
+        // Right boundary
+        if (player.x + player.width > worldWidth) {
+            player.x = worldWidth - player.width
+            player.vx = 0f
+            collided = true
+        }
+
         // Top boundary
-        if (rect.top < 0f) {
+        if (player.y < 0f) {
             player.y = 0f
             if (player.vy < 0f) player.vy = 0f
             collided = true
         }
 
-        // Horizontal world bounds
-        if (player.x < 0f) { player.x = 0f; player.vx = 0f }
-        if (player.x + player.width > worldWidth) { player.x = worldWidth - player.width; player.vx = 0f }
-
-        // Ground collision
-        if (rect.bottom > groundTopY) {
+        // Ground collision - always check after position update
+        if (player.y + player.height > groundTopY) {
             if (player.vy >= 0f) {
                 player.y = groundTopY - player.height
                 player.vy = 0f
@@ -262,38 +272,55 @@ class TileMap(private val ctx: Context) {
             }
         }
 
-        // Platform collisions
+        // Platform collisions - only from top
         for (p in platforms) {
-            if (rect.right > p.left && rect.left < p.right) {
-                if (player.vy > 0f && rect.bottom > p.top && rect.top < p.top) {
-                    player.y = p.top - player.height
-                    player.vy = 0f
-                    collided = true
+            val pRect = RectF(player.x, player.y, player.x + player.width, player.y + player.height)
+            if (pRect.right > p.left && pRect.left < p.right) {
+                // Only collide from above when falling
+                if (player.vy > 0f && pRect.bottom > p.top && pRect.top < p.top) {
+                    // Check if player was above platform in previous frame
+                    val prevBottom = player.prevY + player.height
+                    if (prevBottom <= p.top + 5f) {  // Small tolerance
+                        player.y = p.top - player.height
+                        player.vy = 0f
+                        collided = true
+                    }
                 }
             }
         }
 
-        // Pipe collisions (solid blocks)
+        // Pipe collisions (solid blocks) - improved collision detection
         for (pipe in pipes) {
-            if (rect.intersect(pipe)) {
-                // Simple push out collision
-                val overlapX = minOf(rect.right - pipe.left, pipe.right - rect.left)
-                val overlapY = minOf(rect.bottom - pipe.top, pipe.bottom - rect.top)
+            val pRect = RectF(player.x, player.y, player.x + player.width, player.y + player.height)
+            if (pRect.intersect(pipe)) {
+                // Calculate overlap amounts
+                val overlapLeft = pRect.right - pipe.left
+                val overlapRight = pipe.right - pRect.left
+                val overlapTop = pRect.bottom - pipe.top
+                val overlapBottom = pipe.bottom - pRect.top
 
-                if (overlapX < overlapY) {
-                    // Horizontal collision
-                    if (rect.centerX() < pipe.centerX()) {
+                // Find minimum overlap
+                val minOverlapX = kotlin.math.min(overlapLeft, overlapRight)
+                val minOverlapY = kotlin.math.min(overlapTop, overlapBottom)
+
+                if (minOverlapX < minOverlapY) {
+                    // Horizontal collision - push out horizontally
+                    if (overlapLeft < overlapRight) {
+                        // Player is overlapping from right, push left
                         player.x = pipe.left - player.width
                     } else {
+                        // Player is overlapping from left, push right
                         player.x = pipe.right
                     }
                     player.vx = 0f
                 } else {
-                    // Vertical collision
-                    if (rect.centerY() < pipe.centerY()) {
+                    // Vertical collision - push out vertically
+                    if (overlapTop < overlapBottom) {
+                        // Player is overlapping from bottom, push up
                         player.y = pipe.top - player.height
                         if (player.vy > 0f) player.vy = 0f
                     } else {
+                        // Player is overlapping from top, push down
                         player.y = pipe.bottom
                         if (player.vy < 0f) player.vy = 0f
                     }
@@ -302,21 +329,27 @@ class TileMap(private val ctx: Context) {
             }
         }
 
-        // Brick collisions
+        // Brick collisions - same improved logic as pipes
         for (brick in bricks) {
-            if (rect.intersect(brick)) {
-                val overlapX = minOf(rect.right - brick.left, brick.right - rect.left)
-                val overlapY = minOf(rect.bottom - brick.top, brick.bottom - rect.top)
+            val pRect = RectF(player.x, player.y, player.x + player.width, player.y + player.height)
+            if (pRect.intersect(brick)) {
+                val overlapLeft = pRect.right - brick.left
+                val overlapRight = brick.right - pRect.left
+                val overlapTop = pRect.bottom - brick.top
+                val overlapBottom = brick.bottom - pRect.top
 
-                if (overlapX < overlapY) {
-                    if (rect.centerX() < brick.centerX()) {
+                val minOverlapX = kotlin.math.min(overlapLeft, overlapRight)
+                val minOverlapY = kotlin.math.min(overlapTop, overlapBottom)
+
+                if (minOverlapX < minOverlapY) {
+                    if (overlapLeft < overlapRight) {
                         player.x = brick.left - player.width
                     } else {
                         player.x = brick.right
                     }
                     player.vx = 0f
                 } else {
-                    if (rect.centerY() < brick.centerY()) {
+                    if (overlapTop < overlapBottom) {
                         player.y = brick.top - player.height
                         if (player.vy > 0f) player.vy = 0f
                     } else {
@@ -328,8 +361,8 @@ class TileMap(private val ctx: Context) {
             }
         }
 
-        // World bottom
-        if (rect.bottom > worldHeight) {
+        // World bottom boundary
+        if (player.y + player.height > worldHeight) {
             player.y = worldHeight - player.height
             player.vy = 0f
             collided = true
