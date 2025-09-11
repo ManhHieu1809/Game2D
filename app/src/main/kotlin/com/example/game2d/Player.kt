@@ -5,16 +5,23 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Paint
-import android.graphics.RectF
 import android.graphics.Rect
+import android.graphics.RectF
 import android.util.Log
-import kotlin.math.max
+import kotlin.math.round
 
 class Player(ctx: Context, sx: Float, sy: Float) {
     var x = sx
     var y = sy
+    var prevX = x
+    var prevY = y
     var vx = 0f
     var vy = 0f
+
+    // Tùy chỉnh hiển thị sprite: tăng/giảm để nhân vật to/nhỏ
+    private var spriteScale = 1.6f
+
+    // world size (được set sau khi đọc bitmap)
     var width = 48f
     var height = 64f
 
@@ -22,78 +29,93 @@ class Player(ctx: Context, sx: Float, sy: Float) {
     private val jumpPower = -620f
     val gravity = 1600f
 
+    // Bitmaps cho từng animation
     private var bmpIdle: Bitmap? = null
+    private var idleFrames = 1
+    private var idleFrameW = 0
+    private var idleFrameH = 0
+
     private var bmpRun: Bitmap? = null
+    private var runFrames = 1
+    private var runFrameW = 0
+    private var runFrameH = 0
+
     private var bmpJump: Bitmap? = null
+    private var jumpFrames = 1
+    private var jumpFrameW = 0
+    private var jumpFrameH = 0
+
     private var bmpFall: Bitmap? = null
-    private var bmpIdleFlipped: Bitmap? = null
-    private var bmpRunFlipped: Bitmap? = null
-    private var bmpJumpFlipped: Bitmap? = null
-    private var bmpFallFlipped: Bitmap? = null
-    private var framesIdle = 1
-    private var framesRun = 10 // Cập nhật cứng giá trị dựa trên sprite sheet mới
+    private var fallFrames = 1
+    private var fallFrameW = 0
+    private var fallFrameH = 0
+
     private var curFrame = 0
     private var timer = 0L
-    private val frameDt = 120L
+    private val frameDt = 100L // ms giữa frame — tăng nếu animation quá nhanh
 
-    private var facing = 1
-    private var movingState = 0
-
-    // current animation frame count (kept in update to keep curFrame in range)
-    private var animFrames = 1
-
-    // paint for bitmap drawing: nearest neighbor (no filtering) - FIXED
     private val paintBitmap = Paint().apply {
-        isFilterBitmap = false  // Tắt filtering để tránh blur
-        isAntiAlias = false     // Tắt anti-alias cho pixel art
-        isDither = false        // Tắt dithering
+        isFilterBitmap = false
+        isAntiAlias = false
+        isDither = false
     }
 
+    private var movingState = 0 // -1 left, 0 idle, 1 right
+    private var facing = 1
+
     init {
+        // Tên resource phải trùng với tên file trong res/drawable(-nodpi)
         bmpIdle = loadBmp(ctx, "idle_32x32")
-        bmpRun = loadBmp(ctx, "run_32x32")
+        bmpRun  = loadBmp(ctx, "run_32x32")
         bmpJump = loadBmp(ctx, "jump_32x32")
         bmpFall = loadBmp(ctx, "fall_32x32")
 
-        val flipMatrix = android.graphics.Matrix().apply { preScale(-1f, 1f) }
-
-        bmpIdle?.let { bmpIdleFlipped = Bitmap.createBitmap(it, 0, 0, it.width, it.height, flipMatrix, false) }
-        bmpRun?.let { bmpRunFlipped = Bitmap.createBitmap(it, 0, 0, it.width, it.height, flipMatrix, false) }
-        bmpJump?.let { bmpJumpFlipped = Bitmap.createBitmap(it, 0, 0, it.width, it.height, flipMatrix, false) }
-        bmpFall?.let { bmpFallFlipped = Bitmap.createBitmap(it, 0, 0, it.width, it.height, flipMatrix, false) }
-
+        // detect frames & frame size cho từng sheet
         bmpIdle?.let { b ->
-            if (b.height > 0 && b.width >= b.height) framesIdle = b.width / b.height
-            width = (b.width / framesIdle).toFloat()
-            height = b.height.toFloat()
-        } ?: run {
-            bmpRun?.let { b ->
-                if (b.height > 0 && b.width >= b.height) framesRun = b.width / b.height // Cập nhật tự động
-                width = (b.width / max(1, framesRun)).toFloat()
-                height = b.height.toFloat()
-            }
+            idleFrameH = b.height
+            idleFrameW = if (b.width >= b.height && b.width % b.height == 0) b.height else b.width
+            idleFrames = if (idleFrameH>0) (b.width / idleFrameW) else 1
+        }
+        bmpRun?.let { b ->
+            runFrameH = b.height
+            runFrameW = if (b.width >= b.height && b.width % b.height == 0) b.height else b.width
+            runFrames = if (runFrameH>0) (b.width / runFrameW) else 1
+        }
+        bmpJump?.let { b ->
+            jumpFrameH = b.height
+            jumpFrameW = b.width
+            jumpFrames = 1
+        }
+        bmpFall?.let { b ->
+            fallFrameH = b.height
+            fallFrameW = b.width
+            fallFrames = 1
         }
 
-        // Đảm bảo kích thước hợp lý cho Mario-style game
-        width = width.coerceIn(32f, 64f)
-        height = height.coerceIn(32f, 64f)
-        Log.d("ASSET_DBG", "Player init: idle=${bmpIdle != null}, run=${bmpRun != null}, jump=${bmpJump != null}, fall=${bmpFall != null}, size=${width}x$height")
+       
+        if (idleFrameW > 0 && idleFrameH > 0) {
+            width = idleFrameW * spriteScale
+            height = idleFrameH * spriteScale
+        } else if (runFrameW > 0 && runFrameH > 0) {
+            width = runFrameW * spriteScale
+            height = runFrameH * spriteScale
+        } else {
+            width = 48f
+            height = 64f
+        }
+        Log.d("PLAYER_INIT","player world size ${width}x${height} - idleFrames=$idleFrames runFrames=$runFrames")
     }
 
     private fun loadBmp(ctx: Context, name: String): Bitmap? {
         val id = ctx.resources.getIdentifier(name, "drawable", ctx.packageName)
-        Log.d("ASSET_DBG", "try load '$name' -> id=$id")
-        if (id == 0) return null
+        if (id == 0) {
+            return null
+        }
         return try {
-            val opts = BitmapFactory.Options().apply {
-                inScaled = false // prevent automatic density scaling
-                inPreferredConfig = Bitmap.Config.ARGB_8888
-                inDither = false // Tắt dithering
-                inPreferQualityOverSpeed = true
-            }
+            val opts = BitmapFactory.Options().apply { inScaled = false; inPreferredConfig = Bitmap.Config.ARGB_8888 }
             BitmapFactory.decodeResource(ctx.resources, id, opts)
         } catch (e: Exception) {
-            Log.e("ASSET_DBG", "decode error $name: ${e.message}")
+            Log.e("PLAYER_ASSET", "decodeResource failed: $e")
             null
         }
     }
@@ -110,79 +132,80 @@ class Player(ctx: Context, sx: Float, sy: Float) {
 
     fun update(dtMs: Long, map: TileMap) {
         val dt = dtMs / 1000f
+        prevX = x
+        prevY = y
+
         vy += gravity * dt
         x += vx * dt
         y += vy * dt
 
+        // cap horizontal speed to reduce tunneling
+        val maxSpeed = 420f
+        vx = vx.coerceIn(-maxSpeed, maxSpeed)
+
+        // world bounds
         if (x < 0f) { x = 0f; vx = 0f }
         if (x + width > map.worldWidth) { x = map.worldWidth - width; vx = 0f }
 
+        // collision resolution
         map.resolvePlayerCollision(this)
 
+        // animation timer & frame index (choose frames by current state)
         timer += dtMs
-        // determine number of frames for current animation and advance curFrame accordingly
-        animFrames = when {
-            vy != 0f && vy < 0f -> 1
-            vy != 0f && vy > 0f -> 1
-            movingState != 0 -> framesRun.coerceAtLeast(1)
-            else -> framesIdle.coerceAtLeast(1)
-        }
+        val targetFrames = when {
+            vy < 0f -> jumpFrames
+            vy > 0f -> fallFrames
+            movingState != 0 -> runFrames
+            else -> idleFrames
+        }.coerceAtLeast(1)
+
         if (timer >= frameDt) {
-            curFrame = (curFrame + 1) % animFrames
+            curFrame = (curFrame + 1) % targetFrames
             timer = 0
         }
+        // ensure curFrame within targetFrames
+        curFrame = curFrame % targetFrames
     }
 
     fun getRect() = RectF(x, y, x + width, y + height)
 
     fun draw(canvas: Canvas, paint: Paint) {
-        var bmp = when {
-            vy != 0f && vy < 0f -> if (facing >= 0) bmpJump else bmpJumpFlipped
-            vy != 0f && vy > 0f -> if (facing >= 0) bmpFall else bmpFallFlipped
-            movingState != 0 -> if (facing >= 0) bmpRun else bmpRunFlipped
-            else -> if (facing >= 0) bmpIdle else bmpIdleFlipped
+        val drawX = round(x)
+        val drawY = round(y)
+        val drawW = round(width)
+        val drawH = round(height)
+        val dst = RectF(drawX, drawY, drawX + drawW, drawY + drawH)
+
+        // choose current sheet & frame info
+        val (sheet, fCount, fW, fH) = when {
+            vy < 0f -> Quad(bmpJump, jumpFrames, jumpFrameW, jumpFrameH)
+            vy > 0f -> Quad(bmpFall, fallFrames, fallFrameW, fallFrameH)
+            movingState != 0 -> Quad(bmpRun, runFrames, runFrameW, runFrameH)
+            else -> Quad(bmpIdle, idleFrames, idleFrameW, idleFrameH)
         }
 
-        // Làm tròn tọa độ và kích thước để tránh sub-pixel artifacts
-        val drawX = kotlin.math.round(x).toInt().toFloat()
-        val drawY = kotlin.math.round(y).toInt().toFloat()
-        val drawWidth = kotlin.math.round(width).toInt().toFloat()
-        val drawHeight = kotlin.math.round(height).toInt().toFloat()
-
-        val dst = RectF(drawX, drawY, drawX + drawWidth, drawY + drawHeight)
-
-        if (bmp != null) {
-            val frames = when (bmp) {
-                bmpRun, bmpRunFlipped -> framesRun
-                bmpIdle, bmpIdleFlipped -> framesIdle
-                else -> 1
-            }
-
-            val fw = if (frames > 0) (bmp.width / frames) else bmp.width
-            val fh = bmp.height
-            var frameIndex = if (frames > 0) (curFrame % frames) else 0
-
-            // Nếu facing < 0, đảo ngược frame index vì sheet flipped đảo order
-            if (facing < 0 && frames > 1) {
-                frameIndex = frames - 1 - frameIndex
-            }
-
+        sheet?.let { b ->
+            val framesCount = fCount.coerceAtLeast(1)
+            val fw = if (fW > 0) fW else b.width
+            val fh = if (fH > 0) fH else b.height
+            val frameIndex = (curFrame % framesCount)
             val srcLeft = frameIndex * fw
-            val srcRight = kotlin.math.min(srcLeft + fw, bmp.width)
-            val src = Rect(srcLeft, 0, srcRight, fh)
+            val src = Rect(srcLeft, 0, srcLeft + fw, fh)
 
-            // Debug log (xóa sau khi test)
-            Log.d("RENDER_DBG", "Drawing frame=$frameIndex, srcLeft=$srcLeft, srcRight=$srcRight, facing=$facing")
-
-            canvas.drawBitmap(bmp, src, dst, paintBitmap)
-        } else {
-            // Fallback rectangle nếu không có sprite
+            canvas.save()
+            if (facing < 0) {
+                canvas.scale(-1f, 1f, dst.centerX(), dst.centerY())
+            }
+            canvas.drawBitmap(b, src, dst, paintBitmap)
+            canvas.restore()
+        } ?: run {
+            // fallback rectangle
             paint.style = Paint.Style.FILL
             paint.color = android.graphics.Color.RED
             canvas.drawRect(dst, paint)
-            paint.color = android.graphics.Color.WHITE
-            paint.textSize = 12f
-            canvas.drawText("MARIO", dst.left, dst.top - 6f, paint)
         }
     }
+
+    // small data class-like holder
+    private data class Quad(val bmp: Bitmap?, val frames: Int, val frameW: Int, val frameH: Int)
 }

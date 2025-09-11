@@ -19,7 +19,10 @@ class TileMap(private val ctx: Context) {
     private val platforms = ArrayList<RectF>()
     private val pipes = ArrayList<RectF>()
     private val bricks = ArrayList<RectF>()
-    private val clouds = ArrayList<Pair<Float, Float>>()
+
+    // Cloud model (vị trí + vận tốc + offset cho bob)
+    data class Cloud(var x: Float, var baseY: Float, var vx: Float, val bobOffset: Float)
+    private val clouds = ArrayList<Cloud>()
 
     data class Pickup(var x: Float, var y: Float, var collected: Boolean = false, var type: String = "coin")
     private val pickups = ArrayList<Pickup>()
@@ -58,14 +61,15 @@ class TileMap(private val ctx: Context) {
             }
         }
 
-        // === CLOUDS ===
-        clouds.add(Pair(200f, 100f))
-        clouds.add(Pair(500f, 80f))
-        clouds.add(Pair(800f, 120f))
-        clouds.add(Pair(1100f, 90f))
-        clouds.add(Pair(1400f, 110f))
-        clouds.add(Pair(1700f, 85f))
-        clouds.add(Pair(2000f, 100f))
+
+        // vx negative -> mây trôi sang trái; thay đổi vx để thay đổi tốc độ (parallax)
+        clouds.add(Cloud(200f, 100f, -12f, 0.2f))
+        clouds.add(Cloud(500f, 80f, -8f, 1.1f))
+        clouds.add(Cloud(800f, 120f, -16f, 2.3f))
+        clouds.add(Cloud(1100f, 90f, -10f, 0.5f))
+        clouds.add(Cloud(1400f, 110f, -6f, 3.7f))
+        clouds.add(Cloud(1700f, 85f, -14f, 4.2f))
+        clouds.add(Cloud(2000f, 100f, -9f, 5.9f))
 
         // === COINS ===
         pickups.add(Pickup(375f, groundTopY - 150f, type = "coin"))
@@ -107,7 +111,9 @@ class TileMap(private val ctx: Context) {
         paint.shader = null
         paint.color = Color.WHITE
         for (cloud in clouds) {
-            drawCloud(canvas, cloud.first, cloud.second)
+            val time = System.currentTimeMillis()
+            val bob = sin((time / 1000.0f) + cloud.bobOffset) * 6f
+            drawCloud(canvas, cloud.x, cloud.baseY + bob)
         }
 
         // === GROUND ===
@@ -380,6 +386,21 @@ class TileMap(private val ctx: Context) {
                     }
                 }
             }
+        }
+
+        // === Update clouds: move and wrap ===
+        val dt = deltaMs / 1000f
+        val wrapMargin = 120f
+        for (cloud in clouds) {
+            cloud.x += cloud.vx * dt
+
+            // wrap horizontally for continuous movement
+            if (cloud.x < -wrapMargin) {
+                cloud.x = worldWidth + wrapMargin
+            } else if (cloud.x > worldWidth + wrapMargin) {
+                cloud.x = -wrapMargin
+            }
+            // (vertical bob handled in draw using sine)
         }
     }
 }
