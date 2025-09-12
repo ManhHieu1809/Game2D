@@ -17,8 +17,8 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val hudPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = 28f }
 
-    private val tileMap = TileMap(context)
-    private val player = Player(context, 200f, 0f)
+    private val tileMap: TileMap
+    private val player: Player
 
     // camera (world coords)
     private var cameraX = 0f
@@ -45,6 +45,12 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
     }
 
     init {
+        com.example.game2d.AppCtx.ctx = context
+
+        // now safe to construct TileMap and Player (they may load sprites)
+        tileMap = TileMap(context)
+        player = Player(context, 200f, 0f)
+
         holder.addCallback(this)
         isFocusable = true
     }
@@ -107,6 +113,8 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
 
         player.update(deltaMs, tileMap)
         tileMap.update(deltaMs)
+        tileMap.updateMonsters(deltaMs, player)
+        tileMap.checkBulletHitAndRespawnIfNeeded(player)
 
         // Compute viewport in world units
         val viewportWorldW = screenW / worldScale
