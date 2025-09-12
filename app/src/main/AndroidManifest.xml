@@ -13,6 +13,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Game2d"
         tools:targetApi="31">
+
         <activity
             android:name="com.example.game2d.MainActivity"
             android:exported="true"
@@ -27,7 +28,16 @@
         <activity
             android:name="com.example.game2d.GameActivity"
             android:exported="true"
-            android:screenOrientation="landscape" />
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
+        <!-- New Character Selection Activity -->
+        <activity
+            android:name="com.example.game2d.CharacterActivity"
+            android:exported="true"
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
+
     </application>
 
 </manifest>

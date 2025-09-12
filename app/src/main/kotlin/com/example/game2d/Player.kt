@@ -18,10 +18,8 @@ class Player(ctx: Context, sx: Float, sy: Float) {
     var vx = 0f
     var vy = 0f
 
-    // Tùy chỉnh hiển thị sprite: tăng/giảm để nhân vật to/nhỏ
     private var spriteScale = 1.6f
 
-    // world size (được set sau khi đọc bitmap)
     var width = 48f
     var height = 64f
 
@@ -29,30 +27,40 @@ class Player(ctx: Context, sx: Float, sy: Float) {
     private val jumpPower = -620f
     val gravity = 1600f
 
-    // Bitmaps cho từng animation
+    // Character sprite sets - based on your images
+    private val characterSprites = mapOf(
+        0 to "idle",        // Ninja Frog (default green character)
+        1 to "pink_idle",   // Pink Man
+        2 to "virtual_idle", // Virtual Guy
+        3 to "mask_idle"    // Mask Dude
+    )
+
+    private var currentCharacter = 0
+    private var spritePrefix = "idle"
+
+    // Animation bitmaps for current character
     private var bmpIdle: Bitmap? = null
+    private var bmpRun: Bitmap? = null
+    private var bmpJump: Bitmap? = null
+    private var bmpFall: Bitmap? = null
+
     private var idleFrames = 1
+    private var runFrames = 1
+    private var jumpFrames = 1
+    private var fallFrames = 1
+
     private var idleFrameW = 0
     private var idleFrameH = 0
-
-    private var bmpRun: Bitmap? = null
-    private var runFrames = 1
     private var runFrameW = 0
     private var runFrameH = 0
-
-    private var bmpJump: Bitmap? = null
-    private var jumpFrames = 1
     private var jumpFrameW = 0
     private var jumpFrameH = 0
-
-    private var bmpFall: Bitmap? = null
-    private var fallFrames = 1
     private var fallFrameW = 0
     private var fallFrameH = 0
 
     private var curFrame = 0
     private var timer = 0L
-    private val frameDt = 100L // ms giữa frame — tăng nếu animation quá nhanh
+    private val frameDt = 100L
 
     private val paintBitmap = Paint().apply {
         isFilterBitmap = false
@@ -60,69 +68,102 @@ class Player(ctx: Context, sx: Float, sy: Float) {
         isDither = false
     }
 
-    private var movingState = 0 // -1 left, 0 idle, 1 right
+    private var movingState = 0
     private var facing = 1
 
     init {
-        // Tên resource phải trùng với tên file trong res/drawable(-nodpi)
-        bmpIdle = loadBmp(ctx, "idle_32x32")
-        bmpRun  = loadBmp(ctx, "run_32x32")
-        bmpJump = loadBmp(ctx, "jump_32x32")
-        bmpFall = loadBmp(ctx, "fall_32x32")
+        // Get selected character from preferences
+        val prefs = ctx.getSharedPreferences("game_prefs", Context.MODE_PRIVATE)
+        currentCharacter = prefs.getInt("selected_character", 0)
 
-        // detect frames & frame size cho từng sheet
-        bmpIdle?.let { b ->
-            idleFrameH = b.height
-            idleFrameW = if (b.width >= b.height && b.width % b.height == 0) b.height else b.width
-            idleFrames = if (idleFrameH>0) (b.width / idleFrameW) else 1
-        }
-        bmpRun?.let { b ->
-            runFrameH = b.height
-            runFrameW = if (b.width >= b.height && b.width % b.height == 0) b.height else b.width
-            runFrames = if (runFrameH>0) (b.width / runFrameW) else 1
-        }
-        bmpJump?.let { b ->
-            jumpFrameH = b.height
-            jumpFrameW = b.width
-            jumpFrames = 1
-        }
-        bmpFall?.let { b ->
-            fallFrameH = b.height
-            fallFrameW = b.width
-            fallFrames = 1
-        }
+        loadCharacterSprites(ctx)
+    }
 
+    private fun loadCharacterSprites(ctx: Context) {
+        // Get the sprite prefix for current character
+        spritePrefix = characterSprites[currentCharacter] ?: "idle"
 
+        // Load all animation states for the selected character
+        bmpIdle = loadBmp(ctx, "${spritePrefix}_32x32")
+        bmpRun = loadBmp(ctx, "${spritePrefix.replace("idle", "run")}_32x32")
+        bmpJump = loadBmp(ctx, "${spritePrefix.replace("idle", "jump")}_32x32")
+        bmpFall = loadBmp(ctx, "${spritePrefix.replace("idle", "fall")}_32x32")
+
+        // Fallback: if specialized animations don't exist, use idle
+        if (bmpRun == null) bmpRun = bmpIdle
+        if (bmpJump == null) bmpJump = bmpIdle
+        if (bmpFall == null) bmpFall = bmpIdle
+
+        // Calculate frame dimensions for each animation
+        calculateFrameDimensions()
+
+        // Set player world size based on sprite dimensions
         if (idleFrameW > 0 && idleFrameH > 0) {
             width = idleFrameW * spriteScale
             height = idleFrameH * spriteScale
-        } else if (runFrameW > 0 && runFrameH > 0) {
-            width = runFrameW * spriteScale
-            height = runFrameH * spriteScale
         } else {
             width = 48f
             height = 64f
         }
-        Log.d("PLAYER_INIT","player world size ${width}x${height} - idleFrames=$idleFrames runFrames=$runFrames")
+
+        Log.d("PLAYER_CHAR", "Loaded character $currentCharacter ($spritePrefix) - size: ${width}x${height}")
+    }
+
+    private fun calculateFrameDimensions() {
+        // Idle animation
+        bmpIdle?.let { b ->
+            idleFrameH = b.height
+            idleFrameW = if (b.width >= b.height && b.width % b.height == 0) b.height else b.width
+            idleFrames = if (idleFrameH > 0) (b.width / idleFrameW) else 1
+        }
+
+        // Run animation
+        bmpRun?.let { b ->
+            runFrameH = b.height
+            runFrameW = if (b.width >= b.height && b.width % b.height == 0) b.height else b.width
+            runFrames = if (runFrameH > 0) (b.width / runFrameW) else 1
+        }
+
+        // Jump animation
+        bmpJump?.let { b ->
+            jumpFrameH = b.height
+            jumpFrameW = if (b.width >= b.height && b.width % b.height == 0) b.height else b.width
+            jumpFrames = if (jumpFrameH > 0) (b.width / jumpFrameW) else 1
+        }
+
+        // Fall animation
+        bmpFall?.let { b ->
+            fallFrameH = b.height
+            fallFrameW = if (b.width >= b.height && b.width % b.height == 0) b.height else b.width
+            fallFrames = if (fallFrameH > 0) (b.width / fallFrameW) else 1
+        }
     }
 
     private fun loadBmp(ctx: Context, name: String): Bitmap? {
         val id = ctx.resources.getIdentifier(name, "drawable", ctx.packageName)
         if (id == 0) {
+            Log.w("PLAYER_ASSET", "Sprite not found: $name")
             return null
         }
         return try {
-            val opts = BitmapFactory.Options().apply { inScaled = false; inPreferredConfig = Bitmap.Config.ARGB_8888 }
+            val opts = BitmapFactory.Options().apply {
+                inScaled = false
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
             BitmapFactory.decodeResource(ctx.resources, id, opts)
         } catch (e: Exception) {
-            Log.e("PLAYER_ASSET", "decodeResource failed: $e")
+            Log.e("PLAYER_ASSET", "Failed to load $name: $e")
             null
         }
     }
 
     fun setMoving(dir: Int) {
         movingState = dir
-        vx = when (dir) { -1 -> -moveSpeed; 1 -> moveSpeed; else -> 0f }
+        vx = when (dir) {
+            -1 -> -moveSpeed
+            1 -> moveSpeed
+            else -> 0f
+        }
         if (dir != 0) facing = if (dir > 0) 1 else -1
     }
 
@@ -133,25 +174,20 @@ class Player(ctx: Context, sx: Float, sy: Float) {
     fun update(dtMs: Long, map: TileMap) {
         val dt = dtMs / 1000f
 
-        // FIXED: Store previous position BEFORE updating
         prevX = x
         prevY = y
 
-        // Apply gravity
         vy += gravity * dt
 
-        // Apply movement
         x += vx * dt
         y += vy * dt
 
-        // Cap horizontal speed to reduce tunneling
         val maxSpeed = 420f
         vx = vx.coerceIn(-maxSpeed, maxSpeed)
 
-        // Collision resolution - this will adjust x, y if needed
         map.resolvePlayerCollision(this)
 
-        // Animation timer & frame index (choose frames by current state)
+        // Animation logic
         timer += dtMs
         val targetFrames = when {
             vy < 0f -> jumpFrames
@@ -164,7 +200,6 @@ class Player(ctx: Context, sx: Float, sy: Float) {
             curFrame = (curFrame + 1) % targetFrames
             timer = 0
         }
-        // ensure curFrame within targetFrames
         curFrame = curFrame % targetFrames
     }
 
@@ -177,7 +212,7 @@ class Player(ctx: Context, sx: Float, sy: Float) {
         val drawH = round(height)
         val dst = RectF(drawX, drawY, drawX + drawW, drawY + drawH)
 
-        // choose current sheet & frame info
+        // Choose current animation based on state
         val (sheet, fCount, fW, fH) = when {
             vy < 0f -> Quad(bmpJump, jumpFrames, jumpFrameW, jumpFrameH)
             vy > 0f -> Quad(bmpFall, fallFrames, fallFrameW, fallFrameH)
@@ -200,13 +235,17 @@ class Player(ctx: Context, sx: Float, sy: Float) {
             canvas.drawBitmap(b, src, dst, paintBitmap)
             canvas.restore()
         } ?: run {
-            // fallback rectangle
+            // Fallback colored rectangle for each character
             paint.style = Paint.Style.FILL
-            paint.color = android.graphics.Color.RED
+            paint.color = when (currentCharacter) {
+                1 -> android.graphics.Color.MAGENTA  // Pink Man
+                2 -> android.graphics.Color.CYAN     // Virtual Guy
+                3 -> android.graphics.Color.YELLOW   // Mask Dude
+                else -> android.graphics.Color.GREEN // Ninja Frog
+            }
             canvas.drawRect(dst, paint)
         }
     }
 
-    // small data class-like holder
     private data class Quad(val bmp: Bitmap?, val frames: Int, val frameW: Int, val frameH: Int)
 }
