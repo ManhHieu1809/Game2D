@@ -4,6 +4,7 @@ import android.content.Context
 import android.graphics.*
 import com.example.game2d.entities.EntityManager
 import com.example.game2d.entities.Monster1
+import com.example.game2d.entities.Monster2
 import com.example.game2d.entities.Pickup
 import com.example.game2d.obstacles.Checkpoint
 import com.example.game2d.obstacles.MovingPlatform
@@ -39,8 +40,7 @@ class TileMap(private val ctx: Context) {
 
     // Entity động
     private val entities = EntityManager()              // dùng cho pickups (hoa quả/coin)
-    private val monsters = mutableListOf<Monster1>()    // quái có bắn đạn
-
+    private val monsters = mutableListOf<com.example.game2d.entities.Entity>()
     // Checkpoint hiện tại (respawn)
     private var lastCheckpointX = 200f
     private var lastCheckpointY = 0f
@@ -90,6 +90,7 @@ class TileMap(private val ctx: Context) {
         movingPlatforms += MovingPlatform(1050f, groundTopY - 220f, 1050f, 1180f, 40f, 1)
         movingPlatforms += MovingPlatform(2500f, groundTopY - 160f, 2500f, 2650f, 60f, 1)
 
+        // Use the Checkpoint constructor your Checkpoint.kt provides (x, y, optional params)
         checkpoints += Checkpoint(1000f, groundTopY - 40f)
         checkpoints += Checkpoint(2000f, groundTopY - 40f)
         checkpoints += Checkpoint(3000f, groundTopY - 40f)
@@ -123,6 +124,12 @@ class TileMap(private val ctx: Context) {
         monsters += Monster1(700f, groundTopY - 32f, patrolWidth = 180f, detectRange = 420f)
         monsters += Monster1(1300f, groundTopY - 32f, patrolWidth = 160f, detectRange = 420f)
         monsters += Monster1(2100f, groundTopY - 32f, patrolWidth = 160f, detectRange = 420f)
+
+        val m2Scale = 1.6f
+        val m2FrameH = 34f
+
+        monsters += Monster2(3000f, groundTopY - m2FrameH * m2Scale, patrolWidth = 180f, scaleOverride = m2Scale)
+        monsters += Monster2(1700f, groundTopY - m2FrameH * m2Scale, patrolWidth = 220f, scaleOverride = m2Scale)
     }
 
     fun getGroundTopY(): Float = groundTopY
@@ -166,8 +173,7 @@ class TileMap(private val ctx: Context) {
 
         // Entities
         entities.drawAll(canvas)
-        monsters.forEach { it.draw(canvas) }// fruit/coin
-        drawMonsters(canvas)       // quái + đạn của chúng
+        drawMonsters(canvas)
 
         // Viền world
         paint.color = Color.rgb(20, 20, 20)
@@ -229,7 +235,7 @@ class TileMap(private val ctx: Context) {
     }
 
     private fun drawMonsters(canvas: Canvas) {
-        monsters.forEach { it.draw(canvas) }
+        for (m in monsters) m.draw(canvas)
     }
 
     // ===================== UPDATE =====================
@@ -238,6 +244,8 @@ class TileMap(private val ctx: Context) {
 
         movingPlatforms.forEach { it.update(dt) }
         saws.forEach { it.update(dt) }
+
+        checkpoints.forEach { it.update(deltaMs) }
 
         clouds.forEach {
             it.x += it.vx * dt
@@ -252,12 +260,34 @@ class TileMap(private val ctx: Context) {
 
 
     fun updateMonsters(deltaMs: Long, player: Player) {
-        monsters.forEach { it.update(deltaMs, player) }
+        for (m in monsters) {
+            when (m) {
+                is com.example.game2d.entities.Monster1 -> m.update(deltaMs, player)
+                is com.example.game2d.entities.Monster2 -> m.update(deltaMs, player)
+                else -> {
+                    // fallback: nếu Entity có update(deltaMs)
+                    try {
+                        // gọi reflectively nếu cần; an toàn: bọc try/catch
+                        val method = m.javaClass.getMethod("update", Long::class.java)
+                        method.invoke(m, java.lang.Long.valueOf(deltaMs))
+                    } catch (_: Exception) {
+                        // không hỗ trợ update(deltaMs, player) -> bỏ qua
+                    }
+                }
+            }
+        }
     }
 
+
+
     fun checkBulletHitAndRespawnIfNeeded(player: Player) {
-        if (monsters.any { it.bulletHitPlayer(player) }) respawnPlayer(player)
+        // kiểm tra chỉ các monster loại có bulletHitPlayer (ví dụ Monster1)
+        val hit = monsters.any { it is com.example.game2d.entities.Monster1 && (it as com.example.game2d.entities.Monster1).bulletHitPlayer(player) }
+        if (hit) {
+            respawnPlayer(player)
+        }
     }
+
 
     // ===================== COLLISION =====================
     fun resolvePlayerCollision(player: Player): Boolean {
@@ -334,9 +364,11 @@ class TileMap(private val ctx: Context) {
 
         // checkpoint
         for (cp in checkpoints) {
-            if (!cp.activated && cp.tryActivate(player.x + player.width/2f, player.y + player.height/2f)) {
-                lastCheckpointX = cp.x
-                lastCheckpointY = cp.y - player.height
+            // use the overload that accepts Player (preferred) and store respawn via getBounds()
+            if (!cp.activated && cp.tryActivate(player)) {
+                val b = cp.getBounds()
+                lastCheckpointX = b.left
+                lastCheckpointY = b.bottom - player.height
             }
         }
 
@@ -372,17 +404,35 @@ class TileMap(private val ctx: Context) {
     private fun handleMonsterBodyAndStomp(player: Player): Boolean {
         val pr = RectF(player.x, player.y, player.x + player.width, player.y + player.height)
         for (m in monsters) {
-            if (m.tryStompBy(player)) {           // dẫm từ trên xuống
-                player.vy = -300f
-                return true
-            }
-            if (RectF.intersects(m.getBounds(), pr)) { // đụng thân
-                respawnPlayer(player)
-                return true
+            when (m) {
+                is com.example.game2d.entities.Monster1 -> {
+                    if (m.tryStompBy(player)) {
+                        player.vy = -300f
+                        return true
+                    }
+                    if (RectF.intersects(m.getBounds(), pr)) {
+                        respawnPlayer(player)
+                        return true
+                    }
+                }
+                is com.example.game2d.entities.Monster2 -> {
+                    if (m.tryStompBy(player)) {
+                        player.vy = -300f
+                        return true
+                    }
+                    if (RectF.intersects(m.getBounds(), pr)) {
+                        respawnPlayer(player)
+                        return true
+                    }
+                }
+                else -> {
+                    // nếu Entity khác có tryStompBy, có thể xử lý tương tự bằng reflection nếu cần
+                }
             }
         }
         return false
     }
+
 
 
     private fun respawnPlayer(player: Player) {

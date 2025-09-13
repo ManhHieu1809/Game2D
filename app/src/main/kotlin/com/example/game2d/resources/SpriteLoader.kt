@@ -17,10 +17,28 @@ object SpriteLoader {
         // Obstacles
         load(ctx, "spike")
         load(ctx, "saw")
-        load(ctx, "checkpoint")
+        load(ctx, "checkpoint_pole")
+        loadFramesFromSheet(ctx, "checkpoint_flag_out", 26)
+        loadFramesFromSheet(ctx, "checkpoint_flag_idle", 10)
+        // --- Monster2 sprites ---
+        loadFramesFromSheet(ctx, "monster2_run", 6)
+        loadFramesFromSheet(ctx, "monster2_idle", 11)
+        loadFramesFromSheet(ctx, "monster2_hitwall", 4)
+        loadFramesFromSheet(ctx, "monster2_hit", 5)
 
-        // Fruits (coin)
-        listOf("strawberry","apple","cherry","orange","banana").forEach { load(ctx, it) }
+        val fruits = listOf("strawberry","apple","cherry","orange","banana")
+        fun tryLoadFramesFor(ctx: Context, name: String): Boolean {
+            val tries = listOf(17)
+            for (c in tries) {
+                if (loadFramesFromSheet(ctx, name, c)) return true
+            }
+            return false
+        }
+        fruits.forEach { name ->
+            if (!tryLoadFramesFor(ctx, name)) {
+                load(ctx, name) // fallback single image if no matching sheet pattern
+            }
+        }
 
         // Enemy pig
         if (!loadFramesByFiles(ctx, "pig", 6)) {

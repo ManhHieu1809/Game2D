@@ -17,11 +17,11 @@ class Pickup(val type: String, startX: Float, startY: Float) : Entity() {
     }
 
     private fun size(): Float = when(type) {
-        "cherry" -> 28f
-        "strawberry" -> 32f
-        "apple","orange" -> 36f
-        "banana" -> 40f
-        else -> 32f
+        "cherry" -> 70f
+        "strawberry" -> 70f
+        "apple","orange" -> 70f
+        "banana" -> 70f
+        else -> 50f
     }
 
     override fun update(dtMs: Long) {
@@ -32,18 +32,36 @@ class Pickup(val type: String, startX: Float, startY: Float) : Entity() {
 
     override fun draw(canvas: Canvas) {
         if (collected) return
-        val bmp = SpriteLoader.get(type)
+
+        // try frames first
+        val frames = SpriteLoader.getFrames(type)
         val s = size()
         val dest = RectF(x - s/2, y + vy - s/2, x + s/2, y + vy + s/2)
-        if (bmp != null) {
-            paint.isFilterBitmap = true
-            paint.isDither = true
-            canvas.drawBitmap(bmp, null, dest, paint)
+
+        if (frames.isNotEmpty()) {
+            // animate using t (t được tăng trong update)
+            val fps = 12f                       // tốc độ frame: chỉnh nếu muốn
+            val idx = ((t * fps).toInt() % frames.size).coerceAtLeast(0)
+            val bmp = frames.getOrNull(idx) ?: SpriteLoader.get(type)
+            bmp?.let {
+                paint.isFilterBitmap = false   // pixel-art: tắt filtering
+                paint.isDither = false
+                canvas.drawBitmap(it, null, dest, paint)
+            }
         } else {
-            paint.color = Color.RED
-            canvas.drawCircle(x, y + vy, s/2, paint)
+            // fallback: single image (existing behavior) but don't use filtering for pixel-art
+            val bmp = SpriteLoader.get(type)
+            if (bmp != null) {
+                paint.isFilterBitmap = false
+                paint.isDither = false
+                canvas.drawBitmap(bmp, null, dest, paint)
+            } else {
+                paint.color = Color.RED
+                canvas.drawCircle(x, y + vy, s/2, paint)
+            }
         }
     }
+
 
     override fun onCollide(other: Entity) {
         collected = true

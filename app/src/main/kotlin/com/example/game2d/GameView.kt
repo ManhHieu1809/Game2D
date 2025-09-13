@@ -149,13 +149,17 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         canvas.save()
         canvas.translate(screenOffsetX, screenOffsetY)
         canvas.scale(worldScale, worldScale)
-        canvas.translate(-cameraX, -cameraY)
 
-        // Draw world & player in world coords
+// round camera to integer pixels (avoid sub-pixel sampling)
+        val camX = kotlin.math.round(cameraX)
+        val camY = kotlin.math.round(cameraY)
+        canvas.translate(-camX, -camY)
+
         tileMap.draw(canvas)
         player.draw(canvas, paint)
 
         canvas.restore()
+
 
         // Draw HUD/buttons in screen coordinates (after restore)
         drawControlButtonVisible(canvas, btnLeft, "◀", activePointers.containsValue("left"))
