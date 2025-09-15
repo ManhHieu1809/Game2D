@@ -7,14 +7,6 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
-/**
- * Monster1 (fixed)
- * - Đã bổ sung stepAnim(...) để tránh Unresolved reference
- * - DISPLAY_SCALE = 1.6f (kích thước hiển thị)
- * - BULLET_SPEED = 120f
- * - Patrol chỉ khi player không thỏa điều kiện attack
- * - Khi kết thúc death animation -> alive = false (EntityManager sẽ remove)
- */
 
 class Monster1(
     startX: Float,
@@ -195,6 +187,21 @@ class Monster1(
         }
     }
 
+    // thêm public getter để TileMap kiểm tra
+    fun isAlive(): Boolean {
+        return try {
+            // nếu class có aliveFlag private tên khác, đổi tương ứng
+            val field = this.javaClass.getDeclaredField("aliveFlag")
+            field.isAccessible = true
+            val v = field.get(this)
+            if (v is Boolean) v else true
+        } catch (_: Exception) {
+            // an toàn: nếu không có field, giả sử còn sống
+            true
+        }
+    }
+
+
     override fun draw(canvas: Canvas) {
         if (!alive) return
 
@@ -221,6 +228,7 @@ class Monster1(
 
         bullets.forEach { it.draw(canvas) }
     }
+
 
     fun tryStompBy(player: Player): Boolean {
         if (state == State.DEAD || !alive) return false

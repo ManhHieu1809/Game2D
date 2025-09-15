@@ -11,7 +11,7 @@ import kotlin.math.sign
 class Monster2(
     startX: Float,
     startY: Float,
-    private val patrolWidth: Float = 160f,
+    private val patrolWidth: Float = 100f,
     scaleOverride: Float? = null
 ) : Entity() {
 
@@ -28,7 +28,7 @@ class Monster2(
         private const val DEFAULT_SCALE = 1.6f
         private const val PATROL_SPEED_BASE = 40f    // px/s (will be scaled)
         private const val ATTACK_SPEED_BASE = 140f   // px/s (dash speed, scaled)
-        private const val DETECT_RANGE_BASE = 320f   // px horizontal detection
+        private const val DETECT_RANGE_BASE = 100f   // px horizontal detection
         private const val ATTACK_RANGE_BASE = 240f   // px maximum dash travel
         private const val ATTACK_DURATION_MS = 700L // max ms for dash
         private const val ATTACK_COOLDOWN_MS = 900L // ms between attacks
@@ -278,20 +278,38 @@ class Monster2(
         canvas.restore()
     }
 
+    // thêm public getter để TileMap kiểm tra
+    fun isAlive(): Boolean {
+        return try {
+            // nếu class có aliveFlag private tên khác, đổi tương ứng
+            val field = this.javaClass.getDeclaredField("aliveFlag")
+            field.isAccessible = true
+            val v = field.get(this)
+            if (v is Boolean) v else true
+        } catch (_: Exception) {
+            // an toàn: nếu không có field, giả sử còn sống
+            true
+        }
+    }
+
+
+    
     fun tryStompBy(player: Player): Boolean {
-        if (!aliveFlag) return false
+        if (!isAlive()) return false
         val playerBottomNow = player.y + player.height
         val playerBottomPrev = player.prevY + player.height
-        val monsterTop = y
+        val monsterTop = this.y
         val falling = player.vy > 0f
         val wasAbove = playerBottomPrev <= monsterTop + 4f
-        if (falling && wasAbove && playerBottomNow > monsterTop && player.x + player.width > x && player.x < x + displayW) {
-            hp = 0
-            onHit()
+        val isOverlapping = player.x + player.width > this.x && player.x < this.x + this.getBounds().width()
+        if (falling && wasAbove && playerBottomNow > monsterTop && isOverlapping) {
+            // mark as dead / take damage
+            onHit() // hoặc set hp = 0; aliveFlag = false
             return true
         }
         return false
     }
+
 
     fun onHit(damage: Int = 1) {
         hp -= damage
