@@ -182,9 +182,11 @@ class Player(ctx: Context, sx: Float, sy: Float) {
             // Create bullet at player center, slightly in front
             val bulletX = if (facing > 0) x + width else x - 8f
             val bulletY = y + height / 2f - 2f
-            
+
             bullets.add(Bullet(bulletX, bulletY, facing))
             lastShotTime = currentTime
+
+            try { SoundManager.playShot() } catch (e: Exception) { /* ignore */ }
         }
     }
 

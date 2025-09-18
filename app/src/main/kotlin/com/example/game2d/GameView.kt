@@ -24,6 +24,11 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
     private var cameraX = 0f
     private var cameraY = 0f
 
+    // Sound & boundary flags
+    private var touchedLeft = false
+    private var touchedRight = false
+    private var halfCrossed = false
+
     // scale/center
     private var worldScale = 1f
     private var screenOffsetX = 0f
@@ -69,6 +74,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         thread = GameThread(holder, this)
         thread.running = true
         thread.start()
+        try { SoundManager.init(context) } catch (e: Exception) { /* ignore */ }
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
@@ -140,6 +146,38 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         cameraY = cameraY.coerceAtLeast(0f)
         // Bottom boundary
         cameraY = cameraY.coerceAtMost(max(0f, tileMap.worldHeight - viewportWorldH))
+
+        // ----- Sound triggers for gameplay events -----
+        val playerScreenX = player.x - cameraX
+        val playerCenterScreenX = player.x + player.width / 2f - cameraX
+        val playerRightScreenX = playerScreenX + player.width
+
+// Left edge contact
+        if (playerScreenX <= 0f && !touchedLeft) {
+            touchedLeft = true
+            try { SoundManager.playWallHit() } catch (e: Exception) {}
+        } else if (playerScreenX > 0f) {
+            touchedLeft = false
+        }
+
+// Right edge contact
+        if (playerRightScreenX >= viewportWorldW && !touchedRight) {
+            touchedRight = true
+            try { SoundManager.playWallHit() } catch (e: Exception) {}
+        } else if (playerRightScreenX < viewportWorldW) {
+            touchedRight = false
+        }
+
+// Crossing center from left to right: trigger warning 3..6 times
+        if (playerCenterScreenX > viewportWorldW / 2f && !halfCrossed) {
+            halfCrossed = true
+            val repeats = (3..6).random() // nếu muốn random 3->6, hoặc dùng số cố định
+            try { SoundManager.playWarning(repeats, 300L) } catch (e: Exception) {}
+        } else if (playerCenterScreenX <= viewportWorldW / 2f) {
+            halfCrossed = false
+        }
+// ----- end sound triggers -----
+
     }
 
     override fun draw(canvas: Canvas) {
