@@ -510,6 +510,30 @@ class TileMap(ctx: Context) {
         if (hit) {
             respawnPlayer(player)
         }
+        
+        // Check player bullets hitting monsters
+        val playerBullets = player.getBullets()
+        val monstersToRemove = mutableListOf<com.example.game2d.entities.Entity>()
+        
+        for (bullet in playerBullets) {
+            if (!bullet.isActive()) continue
+            
+            for (monster in monsters) {
+                val monsterBounds = when (monster) {
+                    is Monster1 -> monster.getBounds()
+                    is Monster2 -> monster.getBounds()
+                    else -> continue
+                }
+                
+                if (android.graphics.RectF.intersects(bullet.getBounds(), monsterBounds)) {
+                    bullet.deactivate()
+                    monstersToRemove.add(monster)
+                    break
+                }
+            }
+        }
+        
+        monsters.removeAll(monstersToRemove)
     }
 
     // ===================== COLLISION =====================

@@ -33,6 +33,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
     private val btnLeft = RectF()
     private val btnRight = RectF()
     private val btnJump = RectF()
+    private val btnShot = RectF()
     private val activePointers = HashMap<Int, String>()
 
     private var screenW = 1f
@@ -92,6 +93,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         btnLeft.set(margin, screenH - margin - btnSize, margin + btnSize, screenH - margin)
         btnRight.set(btnLeft.right + margin * 0.6f, btnLeft.top, btnLeft.right + margin * 0.6f + btnSize, btnLeft.bottom)
         btnJump.set(screenW - margin - btnSize, screenH - margin - btnSize, screenW - margin, screenH - margin)
+        btnShot.set(screenW - margin - btnSize, screenH - margin - btnSize * 2.2f, screenW - margin, screenH - margin - btnSize * 1.2f)
 
         // Scale the world so it fits the SCREEN HEIGHT properly
         worldScale = screenH / tileMap.worldHeight
@@ -165,10 +167,11 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         drawControlButtonVisible(canvas, btnLeft, "◀", activePointers.containsValue("left"))
         drawControlButtonVisible(canvas, btnRight, "▶", activePointers.containsValue("right"))
         drawControlButtonVisible(canvas, btnJump, "▲", activePointers.containsValue("jump"))
+        drawControlButtonVisible(canvas, btnShot, "●", activePointers.containsValue("shot"))
 
         // Debug info
         hudPaint.color = Color.WHITE
-        canvas.drawText("Use buttons: ← → ▲", 12f, 34f, hudPaint)
+        canvas.drawText("Use buttons: ← → ▲ ●", 12f, 34f, hudPaint)
         // Show camera position for debugging
         canvas.drawText("Camera: (${cameraX.toInt()}, ${cameraY.toInt()})", 12f, 64f, hudPaint)
     }
@@ -199,6 +202,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
                 if (which != null) {
                     activePointers[pid] = which
                     if (which == "jump") player.jump()
+                    if (which == "shot") player.shoot()
                 } else {
                     activePointers[pid] = if (x < width / 2f) "left" else "right"
                 }
@@ -223,6 +227,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         if (btnLeft.contains(x, y)) return "left"
         if (btnRight.contains(x, y)) return "right"
         if (btnJump.contains(x, y)) return "jump"
+        if (btnShot.contains(x, y)) return "shot"
         return null
     }
 

@@ -71,6 +71,11 @@ class Player(ctx: Context, sx: Float, sy: Float) {
     private var movingState = 0
     private var facing = 1
 
+    // Bullet system
+    private val bullets = mutableListOf<Bullet>()
+    private var lastShotTime = 0L
+    private val shotCooldown = 300L // 300ms between shots
+
     init {
         // Get selected character from preferences
         val prefs = ctx.getSharedPreferences("game_prefs", Context.MODE_PRIVATE)
@@ -171,6 +176,18 @@ class Player(ctx: Context, sx: Float, sy: Float) {
         if (vy == 0f) vy = jumpPower
     }
 
+    fun shoot() {
+        val currentTime = System.currentTimeMillis()
+        if (currentTime - lastShotTime >= shotCooldown) {
+            // Create bullet at player center, slightly in front
+            val bulletX = if (facing > 0) x + width else x - 8f
+            val bulletY = y + height / 2f - 2f
+            
+            bullets.add(Bullet(bulletX, bulletY, facing))
+            lastShotTime = currentTime
+        }
+    }
+
     fun update(dtMs: Long, map: TileMap) {
         val dt = dtMs / 1000f
 
@@ -201,6 +218,10 @@ class Player(ctx: Context, sx: Float, sy: Float) {
             timer = 0
         }
         curFrame = curFrame % targetFrames
+
+        // Update bullets
+        bullets.forEach { it.update(dtMs, 6400f) } // worldWidth from TileMap
+        bullets.removeAll { !it.isActive() }
     }
 
     fun getRect() = RectF(x, y, x + width, y + height)
@@ -245,7 +266,12 @@ class Player(ctx: Context, sx: Float, sy: Float) {
             }
             canvas.drawRect(dst, paint)
         }
+
+        // Draw bullets
+        bullets.forEach { it.draw(canvas) }
     }
+
+    fun getBullets(): List<Bullet> = bullets
 
     private data class Quad(val bmp: Bitmap?, val frames: Int, val frameW: Int, val frameH: Int)
 }
