@@ -1,10 +1,7 @@
 package com.example.game2d
 
 import android.content.Context
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.RectF
+import android.graphics.*
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -50,6 +47,19 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         color = Color.WHITE; textSize = 36f; textAlign = Paint.Align.CENTER
     }
 
+    // ====== NEW: Toggle bitmaps & rects ======
+    private val togglePaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val rectMusic = RectF() // giữa cạnh trên
+    private val rectSfx = RectF()   // giữa cạnh dưới
+
+    private var bmpMusicOn: Bitmap? = null   // X  (music_turnon)
+    private var bmpMusicOff: Bitmap? = null  // Y  (music_turnoff)
+    private var bmpSfxOn: Bitmap? = null     // O  (sound_on)
+    private var bmpSfxOff: Bitmap? = null    // Z  (sound_off)
+
+    private var musicEnabled = false
+    // SFX state lấy trực tiếp từ SoundManager.isSfxEnabled()
+
     init {
         com.example.game2d.AppCtx.ctx = context
 
@@ -59,6 +69,12 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
 
         holder.addCallback(this)
         isFocusable = true
+
+        // ====== NEW: decode toggle icons once ======
+        bmpMusicOn = BitmapFactory.decodeResource(resources, R.drawable.music_turnon)
+        bmpMusicOff = BitmapFactory.decodeResource(resources, R.drawable.music_turnoff)
+        bmpSfxOn = BitmapFactory.decodeResource(resources, R.drawable.sound_on)
+        bmpSfxOff = BitmapFactory.decodeResource(resources, R.drawable.sound_off)
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
@@ -74,7 +90,14 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         thread = GameThread(holder, this)
         thread.running = true
         thread.start()
-        try { SoundManager.init(context) } catch (e: Exception) { /* ignore */ }
+
+        // Init audio
+        try { SoundManager.init(context) } catch (_: Exception) {}
+        try {
+            MusicManager.init(context, R.raw.bgm) // cần res/raw/bgm.mp3
+            MusicManager.setEnabled(false)        // mặc định tắt, nhấn X để bật
+            musicEnabled = MusicManager.isEnabled()
+        } catch (_: Exception) {}
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
@@ -103,14 +126,29 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
 
         // Scale the world so it fits the SCREEN HEIGHT properly
         worldScale = screenH / tileMap.worldHeight
-
         // Optional caps to avoid super large/small scale
         worldScale = worldScale.coerceIn(0.5f, 2.0f)
-
         // Center vertically
         screenOffsetY = (screenH - tileMap.worldHeight * worldScale) / 2f
         // For X we typically want 0 (camera will scroll horizontally)
         screenOffsetX = 0f
+
+        // ====== NEW: place toggle icons at middle of edges ======
+        val density = resources.displayMetrics.density
+        val sizeDp = 48f
+        val marginDp = 8f
+        val size = sizeDp * density
+        val marginPx = marginDp * density
+
+        // Music (X/Y) giữa cạnh TRÊN
+        val cxTop = screenW / 2f
+        val cyTop = marginPx + size / 2f
+        rectMusic.set(cxTop - size / 2f, cyTop - size / 2f, cxTop + size / 2f, cyTop + size / 2f)
+
+        // SFX (Z/O) giữa cạnh DƯỚI (đối diện)
+        val cxBot = screenW / 2f
+        val cyBot = screenH - marginPx - size / 2f
+        rectSfx.set(cxBot - size / 2f, cyBot - size / 2f, cxBot + size / 2f, cyBot + size / 2f)
     }
 
     fun update(deltaMs: Long) {
@@ -136,15 +174,10 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         cameraX = round(targetCameraX)
         cameraY = round(targetCameraY)
 
-        // FIXED: Properly clamp camera so we never show black areas
-        // Left boundary
+        // Clamp camera
         cameraX = cameraX.coerceAtLeast(0f)
-        // Right boundary - make sure we don't go past the world
         cameraX = cameraX.coerceAtMost(max(0f, tileMap.worldWidth - viewportWorldW))
-
-        // Top boundary
         cameraY = cameraY.coerceAtLeast(0f)
-        // Bottom boundary
         cameraY = cameraY.coerceAtMost(max(0f, tileMap.worldHeight - viewportWorldH))
 
         // ----- Sound triggers for gameplay events -----
@@ -152,32 +185,31 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         val playerCenterScreenX = player.x + player.width / 2f - cameraX
         val playerRightScreenX = playerScreenX + player.width
 
-// Left edge contact
+        // Left edge contact
         if (playerScreenX <= 0f && !touchedLeft) {
             touchedLeft = true
-            try { SoundManager.playWallHit() } catch (e: Exception) {}
+            try { SoundManager.playWallHit() } catch (_: Exception) {}
         } else if (playerScreenX > 0f) {
             touchedLeft = false
         }
 
-// Right edge contact
+        // Right edge contact
         if (playerRightScreenX >= viewportWorldW && !touchedRight) {
             touchedRight = true
-            try { SoundManager.playWallHit() } catch (e: Exception) {}
+            try { SoundManager.playWallHit() } catch (_: Exception) {}
         } else if (playerRightScreenX < viewportWorldW) {
             touchedRight = false
         }
 
-// Crossing center from left to right: trigger warning 3..6 times
+        // Crossing center from left to right: trigger warning 3..6 times
         if (playerCenterScreenX > viewportWorldW / 2f && !halfCrossed) {
             halfCrossed = true
-            val repeats = (3..6).random() // nếu muốn random 3->6, hoặc dùng số cố định
-            try { SoundManager.playWarning(repeats, 300L) } catch (e: Exception) {}
+            val repeats = (3..6).random()
+            try { SoundManager.playWarning(repeats, 300L) } catch (_: Exception) {}
         } else if (playerCenterScreenX <= viewportWorldW / 2f) {
             halfCrossed = false
         }
-// ----- end sound triggers -----
-
+        // ----- end sound triggers -----
     }
 
     override fun draw(canvas: Canvas) {
@@ -190,16 +222,13 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         canvas.translate(screenOffsetX, screenOffsetY)
         canvas.scale(worldScale, worldScale)
 
-// round camera to integer pixels (avoid sub-pixel sampling)
         val camX = kotlin.math.round(cameraX)
         val camY = kotlin.math.round(cameraY)
         canvas.translate(-camX, -camY)
 
         tileMap.draw(canvas)
         player.draw(canvas, paint)
-
         canvas.restore()
-
 
         // Draw HUD/buttons in screen coordinates (after restore)
         drawControlButtonVisible(canvas, btnLeft, "◀", activePointers.containsValue("left"))
@@ -207,19 +236,26 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         drawControlButtonVisible(canvas, btnJump, "▲", activePointers.containsValue("jump"))
         drawControlButtonVisible(canvas, btnShot, "●", activePointers.containsValue("shot"))
 
+        // ====== NEW: draw toggles on top ======
+        val mBmp = if (musicEnabled) bmpMusicOn else bmpMusicOff
+        mBmp?.let { canvas.drawBitmap(it, null, rectMusic, togglePaint) }
+
+        val sfxOn = SoundManager.isSfxEnabled()
+        val sBmp = if (sfxOn) bmpSfxOn else bmpSfxOff
+        sBmp?.let { canvas.drawBitmap(it, null, rectSfx, togglePaint) }
+
         // Debug info
         hudPaint.color = Color.WHITE
         canvas.drawText("Use buttons: ← → ▲ ●", 12f, 34f, hudPaint)
-        // Show camera position for debugging
         canvas.drawText("Camera: (${cameraX.toInt()}, ${cameraY.toInt()})", 12f, 64f, hudPaint)
     }
 
     private fun drawControlButtonVisible(canvas: Canvas, r: RectF, label: String, pressed: Boolean) {
         btnPaint.style = Paint.Style.FILL
-        btnPaint.color = if (pressed) android.graphics.Color.argb(220, 20, 160, 90) else android.graphics.Color.argb(200, 60, 60, 60)
+        btnPaint.color = if (pressed) Color.argb(220, 20, 160, 90) else Color.argb(200, 60, 60, 60)
         canvas.drawRoundRect(r, 18f, 18f, btnPaint)
         btnPaint.style = Paint.Style.STROKE
-        btnPaint.color = android.graphics.Color.argb(220, 0, 0, 0)
+        btnPaint.color = Color.argb(220, 0, 0, 0)
         btnPaint.strokeWidth = 4f
         canvas.drawRoundRect(r, 18f, 18f, btnPaint)
 
@@ -236,6 +272,20 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val x = event.getX(idx)
                 val y = event.getY(idx)
+
+                // ====== NEW: handle toggle taps first ======
+                if (rectMusic.contains(x, y)) {
+                    musicEnabled = MusicManager.toggle() // đổi nhạc + lưu trạng thái
+                    invalidate()
+                    return true
+                }
+                if (rectSfx.contains(x, y)) {
+                    val on = SoundManager.toggleSfx()
+                    // Không cần lưu local; draw() đọc trực tiếp từ SoundManager
+                    invalidate()
+                    return true
+                }
+
                 val which = whichControl(x, y)
                 if (which != null) {
                     activePointers[pid] = which
@@ -250,6 +300,10 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
                     val p = event.getPointerId(i)
                     val x = event.getX(i)
                     val y = event.getY(i)
+
+                    // chặn kéo qua icon toggle: không chuyển sang điều khiển
+                    if (rectMusic.contains(x, y) || rectSfx.contains(x, y)) continue
+
                     val which = whichControl(x, y)
                     if (which != null) activePointers[p] = which
                 }
@@ -271,7 +325,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
 
     fun pause() {
         thread.running = false
-        try { thread.join() } catch (e: InterruptedException) {}
+        try { thread.join() } catch (_: InterruptedException) {}
     }
 
     fun resume() {

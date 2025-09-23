@@ -14,9 +14,13 @@ object SoundManager {
     private var loaded = false
     private val handler = Handler(Looper.getMainLooper())
 
+    // Trạng thái bật/tắt SFX để gắn với toggle Z/O (sound_on/off)
+    @Volatile
+    private var sfxEnabled = true
+
     /**
-     * Call once from Activity/GameView with a real Context (e.g. GameActivity).
-     * Requires files in res/raw: R.raw.gun, R.raw.wall_hit, R.raw.warning
+     * Gọi 1 lần duy nhất từ Activity/GameView (truyền Context thật, vd: GameActivity).
+     * Cần các file trong res/raw: R.raw.gun, R.raw.wall_hit, R.raw.warning
      */
     fun init(ctx: Context) {
         if (soundPool != null) return
@@ -24,40 +28,67 @@ object SoundManager {
             .setUsage(AudioAttributes.USAGE_GAME)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
-        soundPool = SoundPool.Builder().setMaxStreams(6).setAudioAttributes(attrs).build()
+        soundPool = SoundPool.Builder()
+            .setMaxStreams(6)
+            .setAudioAttributes(attrs)
+            .build()
+
         try {
             sGun = soundPool!!.load(ctx, R.raw.gun, 1)
             sWall = soundPool!!.load(ctx, R.raw.wall_hit, 1)
             sWarn = soundPool!!.load(ctx, R.raw.warning, 1)
             soundPool!!.setOnLoadCompleteListener { _, _, _ -> loaded = true }
         } catch (e: Exception) {
-            // nếu thiếu resource sẽ không crash, chỉ không phát âm thanh
+            // Nếu thiếu resource sẽ không crash, chỉ không phát âm thanh
             loaded = false
         }
     }
 
+    /** Bật/tắt toàn bộ SFX (âm thanh ngắn). Dùng cho nút Z/O. */
+    fun setSfxEnabled(enabled: Boolean) {
+        sfxEnabled = enabled
+    }
+
+    /** Đảo trạng thái SFX, trả về trạng thái mới. */
+    fun toggleSfx(): Boolean {
+        sfxEnabled = !sfxEnabled
+        return sfxEnabled
+    }
+
+    /** Trả về trạng thái SFX hiện tại. */
+    fun isSfxEnabled(): Boolean = sfxEnabled
+
     fun playShot() {
-        if (!loaded) return
+        if (!loaded || !sfxEnabled) return
         soundPool?.play(sGun, 1f, 1f, 1, 0, 1f)
     }
 
     fun playWallHit() {
-        if (!loaded) return
+        if (!loaded || !sfxEnabled) return
         soundPool?.play(sWall, 1f, 1f, 1, 0, 1f)
     }
 
     /**
-     * Play warning sound `repeats` times with `intervalMs` ms between plays.
+     * Phát âm "warning" lặp lại [repeats] lần, mỗi lần cách nhau [intervalMs] mili-giây.
      */
     fun playWarning(repeats: Int = 4, intervalMs: Long = 300L) {
-        if (!loaded) return
+        if (!loaded || !sfxEnabled) return
         var counter = 0
         fun playOnce() {
+            if (!sfxEnabled) return // nếu tắt giữa chừng thì dừng
             if (counter >= repeats) return
             soundPool?.play(sWarn, 1f, 1f, 1, 0, 1f)
             counter++
             handler.postDelayed({ playOnce() }, intervalMs)
         }
         playOnce()
+    }
+
+    /** Giải phóng tài nguyên khi thoát game. */
+    fun release() {
+        handler.removeCallbacksAndMessages(null)
+        soundPool?.release()
+        soundPool = null
+        loaded = false
     }
 }
