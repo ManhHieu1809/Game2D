@@ -39,6 +39,14 @@ class TileMap(ctx: Context) {
 
     // Entity động
     private val entities = EntityManager()
+    // --- coin counter (đếm khi ăn fruit/pickup) ---
+    private var coinCount: Int = 0
+    fun getCoinCount(): Int = coinCount
+
+    // --- transient explosion effects (hiển thị khi tiêu diệt quái bằng nhảy lên đầu) ---
+    private data class Explosion(var x: Float, var y: Float, var t: Long = 0L, val dur: Long = 600L)
+    private val explosions = mutableListOf<Explosion>()
+
     private val monsters = mutableListOf<com.example.game2d.entities.Entity>()
 
     // Checkpoint - FIX: không đặt player đứng im
@@ -375,6 +383,23 @@ class TileMap(ctx: Context) {
 
         // Entities
         entities.drawAll(canvas)
+        // Draw transient explosions (bomb) on world coordinates
+        val _bombBmp = com.example.game2d.resources.SpriteLoader.get("bomb")
+        for (ex in explosions) {
+            val alpha = 255 - ((ex.t.toFloat() / ex.dur) * 255f).toInt().coerceIn(0,255)
+            paint.alpha = alpha
+            if (_bombBmp != null) {
+                val w = 64f
+                val h = 64f
+                val dest = RectF(ex.x - w/2f, ex.y - h/2f, ex.x + w/2f, ex.y + h/2f)
+                canvas.drawBitmap(_bombBmp, null, dest, paint)
+            } else {
+                paint.color = android.graphics.Color.YELLOW
+                canvas.drawCircle(ex.x, ex.y, 28f, paint)
+            }
+            paint.alpha = 255
+        }
+
         drawMonsters(canvas)
 
         // World border
@@ -483,6 +508,10 @@ class TileMap(ctx: Context) {
         }
 
         entities.updateAll(deltaMs)
+        // update transient explosions
+        explosions.forEach { it.t += deltaMs }
+        explosions.removeAll { it.t >= it.dur }
+
     }
 
 
@@ -510,21 +539,21 @@ class TileMap(ctx: Context) {
         if (hit) {
             respawnPlayer(player)
         }
-        
+
         // Check player bullets hitting monsters
         val playerBullets = player.getBullets()
         val monstersToRemove = mutableListOf<com.example.game2d.entities.Entity>()
-        
+
         for (bullet in playerBullets) {
             if (!bullet.isActive()) continue
-            
+
             for (monster in monsters) {
                 val monsterBounds = when (monster) {
                     is Monster1 -> monster.getBounds()
                     is Monster2 -> monster.getBounds()
                     else -> continue
                 }
-                
+
                 if (android.graphics.RectF.intersects(bullet.getBounds(), monsterBounds)) {
                     bullet.deactivate()
                     monstersToRemove.add(monster)
@@ -532,7 +561,7 @@ class TileMap(ctx: Context) {
                 }
             }
         }
-        
+
         monsters.removeAll(monstersToRemove)
     }
 
@@ -608,6 +637,10 @@ class TileMap(ctx: Context) {
                 val r = 30f
                 if (dx*dx + dy*dy < r*r) {
                     pk.onCollide(pk)
+                    // tăng điểm khi ăn fruit (những type trong setupPickups)
+                    try {
+                        if (pk.type in arrayOf("cherry","banana","apple","orange","strawberry")) coinCount++
+                    } catch (_: Exception) {}
                 }
             }
         }
@@ -664,6 +697,11 @@ class TileMap(ctx: Context) {
             if (m is Monster1) {
                 if (!m.isAlive()) { it.remove(); continue }
                 if (m.tryStompBy(player)) {
+                    // spawn explosion effect at monster center
+                    try {
+                        val mb = m.getBounds()
+                        explosions.add(Explosion(mb.centerX(), mb.centerY()))
+                    } catch (_: Exception) {}
                     it.remove()
                     player.y = m.y - player.height - 1f
                     player.vy = -280f

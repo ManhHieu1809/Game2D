@@ -46,7 +46,9 @@ object SpriteLoader {
         }
 
         // --- NEW: bullet sprites ---
-        load(ctx, "bullet") // viên đạn đang bay
+        load(ctx, "bullet")
+        // explosion image used when stomping enemies
+        load(ctx, "bomb") // viên đạn đang bay
         // các frame "vỡ": bullet_hit_1, bullet_hit_2 ... (tự động bỏ qua nếu thiếu)
         if (!loadFramesByFiles(ctx, "bullet_hit", 4)) { // thử 2-4 khung
             // fallback thử tên khác mà bạn có thể đặt

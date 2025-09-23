@@ -235,6 +235,43 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         drawControlButtonVisible(canvas, btnRight, "▶", activePointers.containsValue("right"))
         drawControlButtonVisible(canvas, btnJump, "▲", activePointers.containsValue("jump"))
         drawControlButtonVisible(canvas, btnShot, "●", activePointers.containsValue("shot"))
+        // --- vẽ coin counter (góc trên trái) ---
+        try {
+            // lấy giá trị coin từ tileMap (an toàn)
+            val coinCount = try { tileMap.getCoinCount() } catch (e: Exception) { 0 }
+
+            val coinBmp = com.example.game2d.resources.SpriteLoader.get("cherry")
+
+            val coinSize = 48f
+            val cx = 12f
+            val cy = 12f
+
+            if (coinBmp != null) {
+                // vẽ bitmap icon
+                canvas.drawBitmap(coinBmp, null, android.graphics.RectF(cx, cy, cx + coinSize, cy + coinSize), paint)
+            } else {
+                // fallback: vẽ hình tròn
+                val tmpP = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
+                tmpP.color = android.graphics.Color.YELLOW
+                canvas.drawCircle(cx + coinSize/2f, cy + coinSize/2f, coinSize/2f, tmpP)
+            }
+
+            // vẽ số lượng (dùng nối chuỗi, tránh lỗi hiển thị ${...})
+            val countText = "x " + coinCount.toString()
+            hudPaint.color = android.graphics.Color.WHITE
+            hudPaint.textSize = 36f
+            hudPaint.isAntiAlias = true
+            // Y vị trí baseline: điều chỉnh nếu cần (số nằm giữa icon)
+            canvas.drawText(countText, cx + coinSize + 10f, cy + coinSize*0.75f, hudPaint)
+
+            // debug (tạm): in log mỗi lần draw để kiểm tra coin value
+            android.util.Log.d("GAME_HUD", "coinCount = $coinCount")
+        } catch (e: Exception) {
+            android.util.Log.e("GAME_HUD", "Error drawing coin HUD: ${e.message}")
+        }
+// --- end coin HUD ---
+
+
 
         // ====== NEW: draw toggles on top ======
         val mBmp = if (musicEnabled) bmpMusicOn else bmpMusicOff
@@ -246,8 +283,6 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
 
         // Debug info
         hudPaint.color = Color.WHITE
-        canvas.drawText("Use buttons: ← → ▲ ●", 12f, 34f, hudPaint)
-        canvas.drawText("Camera: (${cameraX.toInt()}, ${cameraY.toInt()})", 12f, 64f, hudPaint)
     }
 
     private fun drawControlButtonVisible(canvas: Canvas, r: RectF, label: String, pressed: Boolean) {
