@@ -11,6 +11,10 @@ import android.view.SurfaceView
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.round
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.media.AudioManager
+import android.util.Log
 
 class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback {
     private var thread: GameThread = GameThread(holder, this)
@@ -41,6 +45,22 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
     private val btnShot = RectF()
     private val activePointers = HashMap<Int, String>()
 
+    // --- audio UI bitmaps & rects ---
+    private var musicOnBmp: Bitmap? = null    // music_turn_on.png (shows when music is OFF)
+    private var musicOffBmp: Bitmap? = null   // music_turn_off.png (shows when music is ON)
+    private var soundOnBmp: Bitmap? = null    // sound_on.png (shows when sound effects ON)
+    private var soundOffBmp: Bitmap? = null   // sound_off.png (shows when sound effects OFF)
+
+    private val musicRect = RectF()
+    private val soundRect = RectF()
+
+    // icon size in px (will scale based on screen density or width)
+    private var iconSizePx = 96f   // you can tune this: px not dp. adjust if too big/small
+
+    // state flags
+    private var isMusicOn = false
+    private var areEffectsOn = true
+
     private var screenW = 1f
     private var screenH = 1f
 
@@ -61,6 +81,39 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         isFocusable = true
     }
 
+    private fun initAudioUI() {
+        // load bitmaps from resources (ensure resource names are correct)
+        try {
+            var tmp1 = BitmapFactory.decodeResource(resources, R.drawable.music_turn_on)
+            var tmp2 = BitmapFactory.decodeResource(resources, R.drawable.music_turn_off)
+            var tmp3 = BitmapFactory.decodeResource(resources, R.drawable.sound_on)
+            var tmp4 = BitmapFactory.decodeResource(resources, R.drawable.sound_off)
+
+            // pre-scale icons once using display density (48dp default)
+            val density = resources.displayMetrics.density
+            val sizePx = (48f * density).toInt().coerceAtLeast(32)
+            musicOnBmp = tmp1?.let { Bitmap.createScaledBitmap(it, sizePx, sizePx, true) }
+            musicOffBmp = tmp2?.let { Bitmap.createScaledBitmap(it, sizePx, sizePx, true) }
+            soundOnBmp = tmp3?.let { Bitmap.createScaledBitmap(it, sizePx, sizePx, true) }
+            soundOffBmp = tmp4?.let { Bitmap.createScaledBitmap(it, sizePx, sizePx, true) }
+            iconSizePx = sizePx.toFloat()
+        } catch (e: Exception) {
+            Log.e("GameView", "Failed to load audio UI bitmaps: ${e.message}")
+        }
+
+        // init sound effects using SoundManager
+        try { SoundManager.init(context) } catch (e: Exception) { Log.e("GameView","SoundManager.init err: ${e.message}") }
+
+        // init background music player (ensure bg_music exists in res/raw)
+        try { BackgroundMusic.init(context, R.raw.bg_music) } catch (e: Exception) { Log.e("GameView","BackgroundMusic.init err: ${e.message}") }
+
+        // default initial states
+        isMusicOn = BackgroundMusic.musicEnabled // usually false initially
+        areEffectsOn = SoundManager.effectsEnabled
+    }
+
+
+
     override fun surfaceCreated(holder: SurfaceHolder) {
         // initial compute
         screenW = width.toFloat()
@@ -70,6 +123,8 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         // place player on ground after we know player.height
         player.x = 200f
         player.y = tileMap.getGroundTopY() - player.height
+
+        initAudioUI()
 
         thread = GameThread(holder, this)
         thread.running = true
@@ -182,24 +237,55 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
 
     override fun draw(canvas: Canvas) {
         super.draw(canvas)
-        // Clear canvas to prevent frame overlap
+        // Clear canvas
         canvas.drawColor(Color.BLACK)
 
-        // Apply transforms: translate offset -> scale -> translate camera
+        // World transforms
         canvas.save()
         canvas.translate(screenOffsetX, screenOffsetY)
         canvas.scale(worldScale, worldScale)
 
-// round camera to integer pixels (avoid sub-pixel sampling)
         val camX = kotlin.math.round(cameraX)
         val camY = kotlin.math.round(cameraY)
         canvas.translate(-camX, -camY)
 
+        // draw world
         tileMap.draw(canvas)
         player.draw(canvas, paint)
 
+        // restore to screen coords
         canvas.restore()
 
+        // ---------------------------
+        // draw audio icons in SCREEN coordinates (pre-scaled bitmaps)
+        // ---------------------------
+        val size = iconSizePx
+        val density = resources.displayMetrics.density
+        val margin = 12f * density
+
+        // SOUND icons -> top-left
+        val soundCenterX = size / 2f + margin
+        val soundCenterY = margin + size / 2f
+        soundRect.set(
+            soundCenterX - size / 2f,
+            soundCenterY - size / 2f,
+            soundCenterX + size / 2f,
+            soundCenterY + size / 2f
+        )
+        val soundBmp = if (areEffectsOn) soundOnBmp else soundOffBmp
+        soundBmp?.let { canvas.drawBitmap(it, soundRect.left, soundRect.top, paint) }
+
+        // MUSIC icons -> top-right
+        val musicCenterX = width - size / 2f - margin
+        val musicCenterY = margin + size / 2f
+        musicRect.set(
+            musicCenterX - size / 2f,
+            musicCenterY - size / 2f,
+            musicCenterX + size / 2f,
+            musicCenterY + size / 2f
+        )
+        val musicBmp = if (isMusicOn) musicOffBmp else musicOnBmp
+        musicBmp?.let { canvas.drawBitmap(it, musicRect.left, musicRect.top, paint) }
 
         // Draw HUD/buttons in screen coordinates (after restore)
         drawControlButtonVisible(canvas, btnLeft, "◀", activePointers.containsValue("left"))
@@ -210,9 +296,9 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         // Debug info
         hudPaint.color = Color.WHITE
         canvas.drawText("Use buttons: ← → ▲ ●", 12f, 34f, hudPaint)
-        // Show camera position for debugging
         canvas.drawText("Camera: (${cameraX.toInt()}, ${cameraY.toInt()})", 12f, 64f, hudPaint)
     }
+
 
     private fun drawControlButtonVisible(canvas: Canvas, r: RectF, label: String, pressed: Boolean) {
         btnPaint.style = Paint.Style.FILL
@@ -236,6 +322,26 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
                 val x = event.getX(idx)
                 val y = event.getY(idx)
+
+                // 1) Check audio toggles first (screen coords)
+                if (soundRect.contains(x, y)) {
+                    areEffectsOn = !areEffectsOn
+                    SoundManager.effectsEnabled = areEffectsOn
+                    if (areEffectsOn) {
+                        try { SoundManager.playShot() } catch (_: Exception) {}
+                    }
+                    return true
+                }
+
+                if (musicRect.contains(x, y)) {
+                    isMusicOn = !isMusicOn
+                    try {
+                        if (isMusicOn) BackgroundMusic.play() else BackgroundMusic.pause()
+                    } catch (_: Exception) {}
+                    return true
+                }
+
+                // 2) Not hitting audio icons -> existing control detection
                 val which = whichControl(x, y)
                 if (which != null) {
                     activePointers[pid] = which
@@ -245,6 +351,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
                     activePointers[pid] = if (x < width / 2f) "left" else "right"
                 }
             }
+
             MotionEvent.ACTION_MOVE -> {
                 for (i in 0 until event.pointerCount) {
                     val p = event.getPointerId(i)
@@ -254,12 +361,14 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
                     if (which != null) activePointers[p] = which
                 }
             }
+
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> {
                 activePointers.remove(pid)
             }
         }
         return true
     }
+
 
     private fun whichControl(x: Float, y: Float): String? {
         if (btnLeft.contains(x, y)) return "left"
@@ -270,8 +379,13 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
     }
 
     fun pause() {
+        // stop game thread
         thread.running = false
         try { thread.join() } catch (e: InterruptedException) {}
+        // pause music (keep soundPool loaded for faster resume)
+        try { BackgroundMusic.pause() } catch (_: Exception) {}
+        // do NOT release SoundManager here if you want quick resume; optional:
+        // SoundManager.release()
     }
 
     fun resume() {
@@ -280,5 +394,11 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
             thread.running = true
             thread.start()
         }
+        // if previously music was on, resume play
+        try {
+            if (isMusicOn) BackgroundMusic.play()
+        } catch (_: Exception) {}
+        // ensure sound pool is initialized
+        try { SoundManager.init(context) } catch (_: Exception) {}
     }
 }

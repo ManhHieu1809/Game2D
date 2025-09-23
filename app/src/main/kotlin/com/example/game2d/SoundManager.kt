@@ -14,43 +14,56 @@ object SoundManager {
     private var loaded = false
     private val handler = Handler(Looper.getMainLooper())
 
-    /**
-     * Call once from Activity/GameView with a real Context (e.g. GameActivity).
-     * Requires files in res/raw: R.raw.gun, R.raw.wall_hit, R.raw.warning
-     */
-    fun init(ctx: Context) {
+    // <-- new flag to enable/disable short sound effects
+    @Volatile
+    var effectsEnabled: Boolean = true
+
+    fun init(context: Context) {
+        // init soundPool if null
         if (soundPool != null) return
+
         val attrs = AudioAttributes.Builder()
             .setUsage(AudioAttributes.USAGE_GAME)
             .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
             .build()
-        soundPool = SoundPool.Builder().setMaxStreams(6).setAudioAttributes(attrs).build()
-        try {
-            sGun = soundPool!!.load(ctx, R.raw.gun, 1)
-            sWall = soundPool!!.load(ctx, R.raw.wall_hit, 1)
-            sWarn = soundPool!!.load(ctx, R.raw.warning, 1)
-            soundPool!!.setOnLoadCompleteListener { _, _, _ -> loaded = true }
-        } catch (e: Exception) {
-            // nếu thiếu resource sẽ không crash, chỉ không phát âm thanh
-            loaded = false
+        soundPool = SoundPool.Builder()
+            .setMaxStreams(6)
+            .setAudioAttributes(attrs)
+            .build()
+
+        // load your short effect files from res/raw (ensure these files exist)
+        // adjust resource names if different
+        sGun = soundPool!!.load(context, R.raw.gun, 1)
+        sWall = soundPool!!.load(context, R.raw.wall_hit, 1)
+        sWarn = soundPool!!.load(context, R.raw.warning, 1)
+
+        // listen for load complete
+        soundPool!!.setOnLoadCompleteListener { _, _, _ ->
+            loaded = true
         }
     }
 
+    fun release() {
+        soundPool?.release()
+        soundPool = null
+        loaded = false
+    }
+
+    // helper to decide whether to play
+    private fun shouldPlayEffects(): Boolean = loaded && effectsEnabled
+
     fun playShot() {
-        if (!loaded) return
+        if (!shouldPlayEffects()) return
         soundPool?.play(sGun, 1f, 1f, 1, 0, 1f)
     }
 
     fun playWallHit() {
-        if (!loaded) return
+        if (!shouldPlayEffects()) return
         soundPool?.play(sWall, 1f, 1f, 1, 0, 1f)
     }
 
-    /**
-     * Play warning sound `repeats` times with `intervalMs` ms between plays.
-     */
     fun playWarning(repeats: Int = 4, intervalMs: Long = 300L) {
-        if (!loaded) return
+        if (!shouldPlayEffects()) return
         var counter = 0
         fun playOnce() {
             if (counter >= repeats) return
