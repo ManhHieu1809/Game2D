@@ -171,7 +171,7 @@ class Player(ctx: Context, sx: Float, sy: Float) {
         if (vy == 0f) vy = jumpPower
     }
 
-    fun update(dtMs: Long, map: TileMap) {
+    fun update(dtMs: Long, map: TileMapInterface) {
         val dt = dtMs / 1000f
 
         prevX = x

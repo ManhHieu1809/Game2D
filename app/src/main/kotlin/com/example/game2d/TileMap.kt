@@ -13,11 +13,11 @@ import com.example.game2d.obstacles.Spike
 import com.example.game2d.resources.SpriteLoader
 import kotlin.math.min
 
-class TileMap(ctx: Context) {
+class TileMap(ctx: Context) : TileMapInterface {
 
     // World size - giống Mario 1-1 length
-    val worldWidth = 6400f  // Tương đương ~200 tiles (32px/tile)
-    val worldHeight = 720f
+    override val worldWidth = 6400f  // Tương đương ~200 tiles (32px/tile)
+    override val worldHeight = 720f
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val groundTopY = worldHeight * 0.8f  // Higher ground như Mario
@@ -333,10 +333,10 @@ class TileMap(ctx: Context) {
         monsters += Monster2(5300f, groundTopY - 34f * 1.6f, patrolWidth = 180f, scaleOverride = 1.6f) // Castle guardian
     }
 
-    fun getGroundTopY(): Float = groundTopY
+    override fun getGroundTopY(): Float = groundTopY
 
     // ===================== DRAW =====================
-    fun draw(canvas: Canvas) {
+    override fun draw(canvas: Canvas) {
         // Mario-style sky
         val skyPaint = Paint().apply {
             shader = LinearGradient(
@@ -468,7 +468,7 @@ class TileMap(ctx: Context) {
     }
 
     // ===================== UPDATE =====================
-    fun update(deltaMs: Long) {
+    override fun update(deltaMs: Long) {
         val dt = deltaMs / 1000f
 
         movingPlatforms.forEach { it.update(dt) }
@@ -486,7 +486,7 @@ class TileMap(ctx: Context) {
     }
 
 
-    fun updateMonsters(deltaMs: Long, player: Player) {
+    override fun updateMonsters(deltaMs: Long, player: Player) {
         for (m in monsters) {
             when (m) {
                 is Monster1 -> m.update(deltaMs, player)
@@ -503,7 +503,7 @@ class TileMap(ctx: Context) {
         monsters.removeAll { it is Monster2 && !it.isAlive() }
     }
 
-    fun checkBulletHitAndRespawnIfNeeded(player: Player) {
+    override fun checkBulletHitAndRespawnIfNeeded(player: Player) {
         val hit = monsters.any {
             it is Monster1 && it.bulletHitPlayer(player)
         }
@@ -513,7 +513,7 @@ class TileMap(ctx: Context) {
     }
 
     // ===================== COLLISION =====================
-    fun resolvePlayerCollision(player: Player): Boolean {
+    override fun resolvePlayerCollision(player: Player): Boolean {
         var collided = false
 
         // World bounds
@@ -673,5 +673,10 @@ class TileMap(ctx: Context) {
         player.y = lastCheckpointY
         player.vx = 0f
         player.vy = 0f
+    }
+
+    // Method to check if player reached the final checkpoint (end of tilemap 1)
+    override fun isCompleted(player: Player): Boolean {
+        return player.x >= 6000f  // Near the final checkpoint of tilemap 1
     }
 }
