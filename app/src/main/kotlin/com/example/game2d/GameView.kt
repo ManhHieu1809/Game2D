@@ -17,7 +17,10 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val hudPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = 28f }
 
-    private val tileMap: TileMap
+    private val tileMap: TileMapInterface
+    private val tileMap2: TileMapInterface
+    private var currentTileMap: TileMapInterface
+    private var isOnTileMap2 = false
     private val player: Player
 
     // camera (world coords)
@@ -49,6 +52,8 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
 
         // now safe to construct TileMap and Player (they may load sprites)
         tileMap = TileMap(context)
+        tileMap2 = TileMap2(context)
+        currentTileMap = tileMap // Bắt đầu với tilemap 1
         player = Player(context, 200f, 0f)
 
         holder.addCallback(this)
@@ -111,12 +116,34 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         if (activePointers.containsValue("right")) mv = 1
         player.setMoving(mv)
 
-        player.update(deltaMs, tileMap)
-        tileMap.update(deltaMs)
-        tileMap.updateMonsters(deltaMs, player)
-        tileMap.checkBulletHitAndRespawnIfNeeded(player)
+        // Cập nhật theo tilemap hiện tại
+        if (isOnTileMap2) {
+            player.update(deltaMs, tileMap2)
+            tileMap2.update(deltaMs)
+            tileMap2.updateMonsters(deltaMs, player)
+            tileMap2.checkBulletHitAndRespawnIfNeeded(player)
 
-        // Compute viewport in world units
+            // Kiểm tra hoàn thành tilemap 2
+            if (tileMap2.isCompleted(player)) {
+                // Có thể thêm logic kết thúc game hoặc chuyển sang tilemap 3
+                // Hiện tại chỉ hiển thị thông báo
+            }
+        } else {
+            player.update(deltaMs, tileMap)
+            tileMap.update(deltaMs)
+            tileMap.updateMonsters(deltaMs, player)
+            tileMap.checkBulletHitAndRespawnIfNeeded(player)
+
+            // Kiểm tra xem player có đến checkpoint cuối của tilemap 1 không
+            if (player.x >= 6000f) { // Checkpoint cuối cùng ở x=6000f
+                switchToTileMap2()
+            }
+        }
+
+        // Tính toán viewport và camera
+        val currentWorldWidth = if (isOnTileMap2) tileMap2.worldWidth else tileMap.worldWidth
+        val currentWorldHeight = if (isOnTileMap2) tileMap2.worldHeight else tileMap.worldHeight
+
         val viewportWorldW = screenW / worldScale
         val viewportWorldH = screenH / worldScale
 
@@ -132,12 +159,27 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         // Left boundary
         cameraX = cameraX.coerceAtLeast(0f)
         // Right boundary - make sure we don't go past the world
-        cameraX = cameraX.coerceAtMost(max(0f, tileMap.worldWidth - viewportWorldW))
+        cameraX = cameraX.coerceAtMost(max(0f, currentWorldWidth - viewportWorldW))
 
         // Top boundary
         cameraY = cameraY.coerceAtLeast(0f)
         // Bottom boundary
-        cameraY = cameraY.coerceAtMost(max(0f, tileMap.worldHeight - viewportWorldH))
+        cameraY = cameraY.coerceAtMost(max(0f, currentWorldHeight - viewportWorldH))
+    }
+
+    // Phương thức chuyển sang tilemap 2
+    private fun switchToTileMap2() {
+        isOnTileMap2 = true
+
+        // Đặt lại vị trí player về đầu tilemap 2
+        player.x = 200f
+        player.y = tileMap2.getGroundTopY() - player.height
+        player.vx = 0f
+        player.vy = 0f
+
+        // Reset camera
+        cameraX = 0f
+        cameraY = 0f
     }
 
     override fun draw(canvas: Canvas) {
@@ -150,16 +192,21 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         canvas.translate(screenOffsetX, screenOffsetY)
         canvas.scale(worldScale, worldScale)
 
-// round camera to integer pixels (avoid sub-pixel sampling)
+        // round camera to integer pixels (avoid sub-pixel sampling)
         val camX = kotlin.math.round(cameraX)
         val camY = kotlin.math.round(cameraY)
         canvas.translate(-camX, -camY)
 
-        tileMap.draw(canvas)
+        // Vẽ tilemap hiện tại
+        if (isOnTileMap2) {
+            tileMap2.draw(canvas)
+        } else {
+            tileMap.draw(canvas)
+        }
+
         player.draw(canvas, paint)
 
         canvas.restore()
-
 
         // Draw HUD/buttons in screen coordinates (after restore)
         drawControlButtonVisible(canvas, btnLeft, "◀", activePointers.containsValue("left"))
@@ -169,6 +216,9 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         // Debug info
         hudPaint.color = Color.WHITE
         canvas.drawText("Use buttons: ← → ▲", 12f, 34f, hudPaint)
+        // Show tilemap info
+        val mapInfo = if (isOnTileMap2) "TileMap 2" else "TileMap 1"
+        canvas.drawText("Current: $mapInfo", 12f, 94f, hudPaint)
         // Show camera position for debugging
         canvas.drawText("Camera: (${cameraX.toInt()}, ${cameraY.toInt()})", 12f, 64f, hudPaint)
     }
