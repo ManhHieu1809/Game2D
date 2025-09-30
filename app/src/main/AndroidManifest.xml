@@ -38,6 +38,7 @@
             android:screenOrientation="landscape"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
-    </application>
+
+         </application>
 
 </manifest>

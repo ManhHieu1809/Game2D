@@ -3,31 +3,12 @@ package com.example.game2d.obstacles
 import android.graphics.*
 import com.example.game2d.Player
 import com.example.game2d.resources.SpriteLoader
-import kotlin.math.min
 
-/**
- * Checkpoint.kt
- *
- * - Uses 3 resources (names below). If frames are not present, it will fallback to a single image.
- * - Supports scaling (scaleOverride) so you can make checkpoint bigger without "sinking" into ground.
- * - API:
- *    constructor: Checkpoint(x, y, activationRadius = 40f, scaleOverride = null)
- *    fun tryActivate(player: Player, radius: Float = activationRadius): Boolean
- *    fun tryActivate(px: Float, py: Float, radius: Float = activationRadius): Boolean
- *    fun update(dtMs: Long)
- *    fun draw(canvas: Canvas)
- *    fun getBounds(): RectF
- *
- * Resource names expected (put in assets/ or res/drawable so SpriteLoader can find them):
- * - checkpoint_pole.png          (single image)
- * - checkpoint_flag_out.png      (sheet, frames 64x64 each)  OR single image fallback
- * - checkpoint_flag_idle.png     (sheet, frames 64x64 each)  OR single image fallback
- */
 class Checkpoint(
     var x: Float,
     var y: Float,
     private val activationRadius: Float = 40f,
-    private val scaleOverride: Float? = null
+    scaleOverride: Float? = null
 ) {
     private enum class State { NOT_VISITED, ACTIVATING, VISITED }
     private var state = State.NOT_VISITED
@@ -85,7 +66,7 @@ class Checkpoint(
             } else {
                 SpriteLoader.get(RES_FLAG_OUT)?.let { flagOutFrames.add(it) }
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             // fallback if getFrames throws or resource missing
             SpriteLoader.get(RES_FLAG_OUT)?.let { flagOutFrames.add(it) }
         }
@@ -99,7 +80,7 @@ class Checkpoint(
             } else {
                 SpriteLoader.get(RES_FLAG_IDLE)?.let { flagIdleFrames.add(it) }
             }
-        } catch (e: Exception) {
+        } catch (_: Exception) {
             SpriteLoader.get(RES_FLAG_IDLE)?.let { flagIdleFrames.add(it) }
         }
 
@@ -225,5 +206,13 @@ class Checkpoint(
                 }
             }
         }
+    }
+
+    // Add reset method to reset checkpoint to initial state
+    fun reset() {
+        activated = false
+        state = State.NOT_VISITED
+        animFrame = 0
+        animTimer = 0L
     }
 }

@@ -23,13 +23,25 @@ class Player(ctx: Context, sx: Float, sy: Float) {
     var width = 48f
     var height = 64f
 
-    private val moveSpeed = 220f
-    private val jumpPower = -620f
+    private var moveSpeed = 220f
+    private var jumpPower = -620f
     val gravity = 1600f
+
+    // Potion effects system
+    private var jumpBoostEndTime = 0L
+    private var speedBoostEndTime = 0L
+    private var magnetEndTime = 0L
+    private var jumpBoostActive = false
+    private var speedBoostActive = false
+    private var magnetActive = false
+
+    // Original values for restoration
+    private val originalMoveSpeed = 220f
+    private val originalJumpPower = -620f
 
     // Character sprite sets - based on your images
     private val characterSprites = mapOf(
-        0 to "idle",        // Ninja Frog (default green character)
+        0 to "idle",
         1 to "pink_idle",   // Pink Man
         2 to "virtual_idle", // Virtual Guy
         3 to "mask_idle"    // Mask Dude
@@ -201,6 +213,8 @@ class Player(ctx: Context, sx: Float, sy: Float) {
             timer = 0
         }
         curFrame = curFrame % targetFrames
+
+        updatePotionEffects()
     }
 
     fun getRect() = RectF(x, y, x + width, y + height)
@@ -246,6 +260,73 @@ class Player(ctx: Context, sx: Float, sy: Float) {
             canvas.drawRect(dst, paint)
         }
     }
+
+    // Potion effect methods
+    fun applyJumpBoost(duration: Long) {
+        jumpBoostActive = true
+        jumpBoostEndTime = System.currentTimeMillis() + duration
+        jumpPower = originalJumpPower * 1.5f // 50% increase
+    }
+
+    fun applySpeedBoost(duration: Long) {
+        speedBoostActive = true
+        speedBoostEndTime = System.currentTimeMillis() + duration
+        moveSpeed = originalMoveSpeed * 1.4f // 40% increase
+    }
+
+    fun applyCoinMagnet(duration: Long) {
+        magnetActive = true
+        magnetEndTime = System.currentTimeMillis() + duration
+    }
+
+    private fun updatePotionEffects() {
+        val currentTime = System.currentTimeMillis()
+
+        // Update jump boost
+        if (jumpBoostActive && currentTime >= jumpBoostEndTime) {
+            jumpBoostActive = false
+            jumpPower = originalJumpPower
+        }
+
+        // Update speed boost
+        if (speedBoostActive && currentTime >= speedBoostEndTime) {
+            speedBoostActive = false
+            moveSpeed = originalMoveSpeed
+        }
+
+        // Update magnet
+        if (magnetActive && currentTime >= magnetEndTime) {
+            magnetActive = false
+        }
+    }
+
+    // Check if effects are active
+    fun hasJumpBoost(): Boolean = jumpBoostActive
+
+    fun hasSpeedBoost(): Boolean = speedBoostActive
+
+    fun hasCoinMagnet(): Boolean = magnetActive
+
+    // Get remaining time for countdown timers
+    fun getJumpBoostRemainingTime(): Long {
+        return if (jumpBoostActive) {
+            (jumpBoostEndTime - System.currentTimeMillis()).coerceAtLeast(0L)
+        } else 0L
+    }
+
+    fun getSpeedBoostRemainingTime(): Long {
+        return if (speedBoostActive) {
+            (speedBoostEndTime - System.currentTimeMillis()).coerceAtLeast(0L)
+        } else 0L
+    }
+
+    fun getMagnetRemainingTime(): Long {
+        return if (magnetActive) {
+            (magnetEndTime - System.currentTimeMillis()).coerceAtLeast(0L)
+        } else 0L
+    }
+
+    fun getMagnetRange(): Float = 220f
 
     private data class Quad(val bmp: Bitmap?, val frames: Int, val frameW: Int, val frameH: Int)
 }

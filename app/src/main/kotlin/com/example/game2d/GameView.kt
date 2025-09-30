@@ -1,10 +1,8 @@
 package com.example.game2d
 
 import android.content.Context
-import android.graphics.Canvas
-import android.graphics.Color
-import android.graphics.Paint
-import android.graphics.RectF
+import android.content.Intent
+import android.graphics.*
 import android.view.MotionEvent
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -15,13 +13,16 @@ import kotlin.math.round
 class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback {
     private var thread: GameThread = GameThread(holder, this)
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val hudPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; textSize = 28f }
 
-    private val tileMap: TileMapInterface
-    private val tileMap2: TileMapInterface
+    private val tileMap: TileMap
+    private val tileMap2: TileMap2
     private var currentTileMap: TileMapInterface
     private var isOnTileMap2 = false
     private val player: Player
+
+    // New game systems
+    private val shopManager = ShopManager(context)
+    private val gameStateManager = GameStateManager(context)
 
     // camera (world coords)
     private var cameraX = 0f
@@ -38,6 +39,11 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
     private val btnJump = RectF()
     private val activePointers = HashMap<Int, String>()
 
+    // Game Over UI elements
+    private val yesButton = RectF()
+    private val noButton = RectF()
+    private var gameOverImage: Bitmap? = null
+
     private var screenW = 1f
     private var screenH = 1f
 
@@ -48,7 +54,10 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
     }
 
     init {
-        com.example.game2d.AppCtx.ctx = context
+        AppCtx.ctx = context
+
+        // Load game over image
+        loadGameOverImage()
 
         // now safe to construct TileMap and Player (they may load sprites)
         tileMap = TileMap(context)
@@ -56,8 +65,24 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         currentTileMap = tileMap // Bắt đầu với tilemap 1
         player = Player(context, 200f, 0f)
 
+        // Always start fresh game session with full lives
+        gameStateManager.initializeNewSession()
+
         holder.addCallback(this)
         isFocusable = true
+    }
+
+    private fun loadGameOverImage() {
+        try {
+            @Suppress("DiscouragedApi")
+            val id = context.resources.getIdentifier("game_over", "drawable", context.packageName)
+            if (id != 0) {
+                gameOverImage = BitmapFactory.decodeResource(context.resources, id)
+            }
+        } catch (_: Exception) {
+            // Fallback if image doesn't exist
+            gameOverImage = null
+        }
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
@@ -86,206 +111,784 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         thread.running = false
         var retry = true
         while (retry) {
-            try { thread.join(); retry = false } catch (e: InterruptedException) {}
+            try { thread.join(); retry = false } catch (_: InterruptedException) {}
         }
     }
 
     private fun recomputeLayout() {
-        // Button sizing (screen coords)
         val btnSize = min(screenW, screenH) * 0.16f
         val margin = btnSize * 0.18f
         btnLeft.set(margin, screenH - margin - btnSize, margin + btnSize, screenH - margin)
         btnRight.set(btnLeft.right + margin * 0.6f, btnLeft.top, btnLeft.right + margin * 0.6f + btnSize, btnLeft.bottom)
         btnJump.set(screenW - margin - btnSize, screenH - margin - btnSize, screenW - margin, screenH - margin)
 
-        // Scale the world so it fits the SCREEN HEIGHT properly
+
+        val gameOverBtnW = screenW * 0.2f
+        val gameOverBtnH = screenH * 0.08f
+        val gameOverBtnY = screenH * 0.75f
+        val gameOverBtnSpacing = screenW * 0.1f
+
+        val totalButtonsWidth = gameOverBtnW * 2 + gameOverBtnSpacing
+        val startX = (screenW - totalButtonsWidth) / 2f
+
+        yesButton.set(startX, gameOverBtnY, startX + gameOverBtnW, gameOverBtnY + gameOverBtnH)
+        noButton.set(startX + gameOverBtnW + gameOverBtnSpacing, gameOverBtnY, startX + gameOverBtnW + gameOverBtnSpacing + gameOverBtnW, gameOverBtnY + gameOverBtnH)
+
         worldScale = screenH / tileMap.worldHeight
-
-        // Optional caps to avoid super large/small scale
         worldScale = worldScale.coerceIn(0.5f, 2.0f)
-
-        // Center vertically
         screenOffsetY = (screenH - tileMap.worldHeight * worldScale) / 2f
-        // For X we typically want 0 (camera will scroll horizontally)
         screenOffsetX = 0f
     }
 
     fun update(deltaMs: Long) {
+        if (gameStateManager.isGameOver()) {
+            return
+        }
+
+        gameStateManager.updateInvulnerability()
+
         var mv = 0
         if (activePointers.containsValue("left")) mv = -1
         if (activePointers.containsValue("right")) mv = 1
         player.setMoving(mv)
 
-        // Cập nhật theo tilemap hiện tại
         if (isOnTileMap2) {
             player.update(deltaMs, tileMap2)
             tileMap2.update(deltaMs)
             tileMap2.updateMonsters(deltaMs, player)
-            tileMap2.checkBulletHitAndRespawnIfNeeded(player)
 
-            // Kiểm tra hoàn thành tilemap 2
-            if (tileMap2.isCompleted(player)) {
-                // Có thể thêm logic kết thúc game hoặc chuyển sang tilemap 3
-                // Hiện tại chỉ hiển thị thông báo
+            tileMap2.checkCoinCollection(player) { coinType ->
+                onCoinCollected(coinType)
             }
+
+            tileMap2.checkHealthCollection(player) { healAmount ->
+                onHealthCollected(healAmount)
+            }
+
+            if (!gameStateManager.isInvulnerable()) {
+                tileMap2.resolvePlayerCollisionSafe(player)
+
+                var playerDied = false
+                var hazardHit = false
+
+                if (tileMap2.checkBulletHitAndRespawnIfNeeded(player)) {
+                    playerDied = true
+                }
+
+                if (!playerDied) {
+                    for (spike in tileMap2.getSpikes()) {
+                        if (spike.isHit(player)) {
+                            hazardHit = true
+                            break
+                        }
+                    }
+
+                    if (!hazardHit) {
+                        for (saw in tileMap2.getSaws()) {
+                            if (saw.isHit(player)) {
+                                hazardHit = true
+                                break
+                            }
+                        }
+                    }
+
+                    if (!hazardHit && player.y + player.height > tileMap2.worldHeight) {
+                        hazardHit = true
+                    }
+                }
+
+                if (playerDied) {
+                    handlePlayerDeath()
+                } else if (hazardHit) {
+                    handleHazardCollision()
+                }
+            } else {
+                tileMap2.resolvePlayerCollisionSafe(player)
+            }
+
+            checkForCheckpoints(tileMap2, 1)
+
+            if (tileMap2.isCompleted(player)) {}
         } else {
             player.update(deltaMs, tileMap)
             tileMap.update(deltaMs)
             tileMap.updateMonsters(deltaMs, player)
-            tileMap.checkBulletHitAndRespawnIfNeeded(player)
 
-            // Kiểm tra xem player có đến checkpoint cuối của tilemap 1 không
-            if (player.x >= 6000f) { // Checkpoint cuối cùng ở x=6000f
+            tileMap.checkCoinCollection(player) { coinType ->
+                onCoinCollected(coinType)
+            }
+
+            tileMap.checkHealthCollection(player) { healAmount ->
+                onHealthCollected(healAmount)
+            }
+
+            if (!gameStateManager.isInvulnerable()) {
+                tileMap.resolvePlayerCollisionSafe(player)
+
+                val (lx, ly, lm) = if (isOnTileMap2) tileMap2.getLastCheckpoint() else tileMap.getLastCheckpoint()
+                val (gx, gy, gm) = gameStateManager.getCheckpoint()
+                if (lx != gx || ly != gy || lm != gm) {
+                    gameStateManager.setCheckpoint(lx, ly, lm)
+                }
+
+                var playerDied = false
+                var hazardHit = false
+
+                if (tileMap.checkBulletHitAndRespawnIfNeeded(player)) {
+                    playerDied = true
+                }
+
+                if (!playerDied) {
+                    for (spike in tileMap.getSpikes()) {
+                        if (spike.isHit(player)) {
+                            hazardHit = true
+                            break
+                        }
+                    }
+
+                    if (!hazardHit) {
+                        for (saw in tileMap.getSaws()) {
+                            if (saw.isHit(player)) {
+                                hazardHit = true
+                                break
+                            }
+                        }
+                    }
+
+                    if (!hazardHit && player.y + player.height > tileMap.worldHeight) {
+                        hazardHit = true
+                    }
+                }
+
+                if (playerDied) {
+                    handlePlayerDeath()
+                } else if (hazardHit) {
+                    handleHazardCollision()
+                }
+            } else {
+                tileMap.resolvePlayerCollisionSafe(player)
+
+                val (lx, ly, lm) = if (isOnTileMap2) tileMap2.getLastCheckpoint() else tileMap.getLastCheckpoint()
+                val (gx, gy, gm) = gameStateManager.getCheckpoint()
+                if (lx != gx || ly != gy || lm != gm) {
+                    gameStateManager.setCheckpoint(lx, ly, lm)
+                }
+
+            }
+
+            checkForCheckpoints(tileMap, 0)
+
+            if (player.x >= 6000f) {
                 switchToTileMap2()
+                val entryX = 200f
+                val entryY = tileMap2.getGroundTopY() - player.height
+                gameStateManager.setCheckpoint(entryX, entryY, 1)
             }
         }
 
-        // Tính toán viewport và camera
         val currentWorldWidth = if (isOnTileMap2) tileMap2.worldWidth else tileMap.worldWidth
         val currentWorldHeight = if (isOnTileMap2) tileMap2.worldHeight else tileMap.worldHeight
 
         val viewportWorldW = screenW / worldScale
         val viewportWorldH = screenH / worldScale
 
-        // Camera follows player (centered on player)
         val targetCameraX = player.x + player.width / 2f - viewportWorldW / 2f
         val targetCameraY = player.y + player.height / 2f - viewportWorldH / 2f
 
-        // Round camera to avoid sub-pixel rendering issues
         cameraX = round(targetCameraX)
         cameraY = round(targetCameraY)
 
-        // FIXED: Properly clamp camera so we never show black areas
-        // Left boundary
         cameraX = cameraX.coerceAtLeast(0f)
-        // Right boundary - make sure we don't go past the world
         cameraX = cameraX.coerceAtMost(max(0f, currentWorldWidth - viewportWorldW))
 
-        // Top boundary
         cameraY = cameraY.coerceAtLeast(0f)
-        // Bottom boundary
         cameraY = cameraY.coerceAtMost(max(0f, currentWorldHeight - viewportWorldH))
     }
 
-    // Phương thức chuyển sang tilemap 2
     private fun switchToTileMap2() {
         isOnTileMap2 = true
 
-        // Đặt lại vị trí player về đầu tilemap 2
         player.x = 200f
         player.y = tileMap2.getGroundTopY() - player.height
         player.vx = 0f
         player.vy = 0f
 
-        // Reset camera
         cameraX = 0f
         cameraY = 0f
     }
 
+    fun onCoinCollected(coinType: String) {
+        val coinValue = when(coinType) {
+            "cherry", "strawberry" -> 5
+            "apple", "orange" -> 10
+            "banana" -> 15
+            else -> 1
+        }
+        shopManager.addCoins(coinValue)
+    }
+
+    private fun handlePlayerDeath() {
+        gameStateManager.loseLife()
+
+        if (gameStateManager.isGameOver()) {
+        } else {
+            respawnAtCheckpoint()
+        }
+    }
+
+    fun onHealthCollected(healAmount: Int) {
+        val currentLives = gameStateManager.getLives()
+        if (currentLives < GameStateManager.MAX_LIVES) {
+            gameStateManager.setLives((currentLives + healAmount).coerceAtMost(GameStateManager.MAX_LIVES))
+        }
+    }
+
+    private fun resetToStart() {
+        isOnTileMap2 = false
+        currentTileMap = tileMap
+
+        player.x = GameStateManager.DEFAULT_SPAWN_X
+        player.y = tileMap.getGroundTopY() - player.height
+        player.vx = 0f
+        player.vy = 0f
+
+        cameraX = 0f
+        cameraY = 0f
+    }
+
+    private fun startNewGame() {
+        gameStateManager.handleGameOver()
+
+        tileMap.resetLevel()
+        tileMap2.resetLevel()
+
+        resetToStart()
+    }
+
+    private fun goToMenu() {
+        val intent = Intent(context, MainActivity::class.java)
+        intent.flags = Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_NEW_TASK
+        context.startActivity(intent)
+        (context as GameActivity).finish()
+    }
+
     override fun draw(canvas: Canvas) {
         super.draw(canvas)
-        // Clear canvas to prevent frame overlap
         canvas.drawColor(Color.BLACK)
 
-        // Apply transforms: translate offset -> scale -> translate camera
         canvas.save()
         canvas.translate(screenOffsetX, screenOffsetY)
         canvas.scale(worldScale, worldScale)
 
-        // round camera to integer pixels (avoid sub-pixel sampling)
-        val camX = kotlin.math.round(cameraX)
-        val camY = kotlin.math.round(cameraY)
+        val camX = round(cameraX)
+        val camY = round(cameraY)
         canvas.translate(-camX, -camY)
 
-        // Vẽ tilemap hiện tại
         if (isOnTileMap2) {
             tileMap2.draw(canvas)
         } else {
             tileMap.draw(canvas)
         }
 
-        player.draw(canvas, paint)
+        if (gameStateManager.isInvulnerable()) {
+            val blinkRate = 150L
+            val shouldShow = (System.currentTimeMillis() / blinkRate) % 2 == 0L
+            if (shouldShow) {
+                player.draw(canvas, paint)
+            }
+        } else {
+            player.draw(canvas, paint)
+        }
+
+        PotionEffects.drawJumpEffect(canvas, player, paint)
+        PotionEffects.drawSpeedEffect(canvas, player, paint)
+        PotionEffects.drawShieldEffect(canvas, player, paint, gameStateManager)
+
 
         canvas.restore()
 
-        // Draw HUD/buttons in screen coordinates (after restore)
-        drawControlButtonVisible(canvas, btnLeft, "◀", activePointers.containsValue("left"))
-        drawControlButtonVisible(canvas, btnRight, "▶", activePointers.containsValue("right"))
-        drawControlButtonVisible(canvas, btnJump, "▲", activePointers.containsValue("jump"))
+        if (!gameStateManager.isGameOver()) {
+            drawControlButtonVisible(canvas, btnLeft, "◀", activePointers.containsValue("left"))
+            drawControlButtonVisible(canvas, btnRight, "▶", activePointers.containsValue("right"))
+            drawControlButtonVisible(canvas, btnJump, "▲", activePointers.containsValue("jump"))
 
-        // Debug info
-        hudPaint.color = Color.WHITE
-        canvas.drawText("Use buttons: ← → ▲", 12f, 34f, hudPaint)
-        // Show tilemap info
-        val mapInfo = if (isOnTileMap2) "TileMap 2" else "TileMap 1"
-        canvas.drawText("Current: $mapInfo", 12f, 94f, hudPaint)
-        // Show camera position for debugging
-        canvas.drawText("Camera: (${cameraX.toInt()}, ${cameraY.toInt()})", 12f, 64f, hudPaint)
+            drawHudWithIcons(canvas)
+        }
+
+        if (gameStateManager.isGameOver()) {
+            drawGameOverScreen(canvas)
+        }
     }
 
-    private fun drawControlButtonVisible(canvas: Canvas, r: RectF, label: String, pressed: Boolean) {
-        btnPaint.style = Paint.Style.FILL
-        btnPaint.color = if (pressed) android.graphics.Color.argb(220, 20, 160, 90) else android.graphics.Color.argb(200, 60, 60, 60)
-        canvas.drawRoundRect(r, 18f, 18f, btnPaint)
-        btnPaint.style = Paint.Style.STROKE
-        btnPaint.color = android.graphics.Color.argb(220, 0, 0, 0)
-        btnPaint.strokeWidth = 4f
-        canvas.drawRoundRect(r, 18f, 18f, btnPaint)
+    private fun drawHudWithIcons(canvas: Canvas) {
+        val hudMargin = 30f
+        val iconSize = 45f
+        val spacing = 10f
 
-        val ty = r.centerY() - (btnTextPaint.descent() + btnTextPaint.ascent()) / 2f
-        canvas.drawText(label, r.centerX(), ty, btnTextPaint)
+        val lives = gameStateManager.getLives()
+        val maxLives = GameStateManager.MAX_LIVES
+
+        for (i in 0 until maxLives) {
+            val heartX = hudMargin + i * (iconSize + spacing)
+            val heartY = hudMargin
+            val filled = i < lives
+            HudIcons.drawHeart(canvas, heartX, heartY, iconSize, paint, filled)
+        }
+
+        val coinX = hudMargin
+        val coinY = hudMargin + iconSize + spacing * 2
+        val currentTime = System.currentTimeMillis()
+        HudIcons.drawCoin(canvas, coinX, coinY, iconSize, paint, currentTime)
+
+        val coinTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = 36f
+            textAlign = Paint.Align.LEFT
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            setShadowLayer(3f, 2f, 2f, Color.BLACK)
+        }
+
+        val coinCount = shopManager.getCoins()
+        canvas.drawText("× $coinCount", coinX + iconSize + spacing, coinY + iconSize * 0.7f, coinTextPaint)
+
+        if (gameStateManager.isInvulnerable()) {
+            val progress = gameStateManager.getInvulnerabilityProgress()
+            val barWidth = 250f
+            val barHeight = 20f
+            val barX = screenW - barWidth - hudMargin
+            val barY = hudMargin
+
+            HudIcons.drawInvulnerabilityBar(canvas, barX, barY, barWidth, barHeight, progress, paint)
+        }
+
+        drawInventoryItems(canvas)
+    }
+
+    private fun drawInventoryItems(canvas: Canvas) {
+        val itemSize = 80f
+        val spacing = 15f
+        val startX = screenW - itemSize - 30f
+        val startY = 120f
+
+        var currentY = startY
+
+        val healthPotions = shopManager.getHealthPotions()
+        if (healthPotions > 0) {
+            drawInventorySlot(canvas, startX, currentY, itemSize, "❤️", healthPotions, "HP")
+            currentY += itemSize + spacing
+        }
+
+        val jumpPotions = shopManager.getJumpPotions()
+        if (jumpPotions > 0) {
+            drawInventorySlot(canvas, startX, currentY, itemSize, "🦘", jumpPotions, "JUMP")
+            currentY += itemSize + spacing
+        }
+
+        val speedPotions = shopManager.getSpeedPotions()
+        if (speedPotions > 0) {
+            drawInventorySlot(canvas, startX, currentY, itemSize, "💨", speedPotions, "SPEED")
+            currentY += itemSize + spacing
+        }
+
+        val shieldPotions = shopManager.getShieldPotions()
+        if (shieldPotions > 0) {
+            drawInventorySlot(canvas, startX, currentY, itemSize, "🛡️", shieldPotions, "SHIELD")
+            currentY += itemSize + spacing
+        }
+
+        val magnetPotions = shopManager.getMagnetPotions()
+        if (magnetPotions > 0) {
+            drawInventorySlot(canvas, startX, currentY, itemSize, "🧲", magnetPotions, "MAGNET")
+        }
+
+        drawEffectCountdowns(canvas)
+    }
+
+    private fun drawInventorySlot(canvas: Canvas, x: Float, y: Float, size: Float, icon: String, count: Int, label: String) {
+        val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(200, 40, 40, 40)
+        }
+        canvas.drawRoundRect(x, y, x + size, y + size, 12f, 12f, backgroundPaint)
+
+        val borderPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            style = Paint.Style.STROKE
+            strokeWidth = 3f
+        }
+        canvas.drawRoundRect(x, y, x + size, y + size, 12f, 12f, borderPaint)
+
+        val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = size * 0.5f
+            textAlign = Paint.Align.CENTER
+        }
+        canvas.drawText(icon, x + size/2, y + size * 0.4f, iconPaint)
+
+        val countPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.YELLOW
+            textSize = size * 0.25f
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            setShadowLayer(2f, 1f, 1f, Color.BLACK)
+        }
+        canvas.drawText(count.toString(), x + size/2, y + size * 0.8f, countPaint)
+    }
+
+    private fun drawEffectCountdowns(canvas: Canvas) {
+        val timerX = screenW - 150f
+        val timerStartY = 120f
+        var currentTimerY = timerStartY
+
+        if (player.hasJumpBoost()) {
+            val remainingTime = player.getJumpBoostRemainingTime()
+            drawCountdownTimer(canvas, timerX, currentTimerY, "🦘", remainingTime)
+            currentTimerY += 40f
+        }
+
+        if (player.hasSpeedBoost()) {
+            val remainingTime = player.getSpeedBoostRemainingTime()
+            drawCountdownTimer(canvas, timerX, currentTimerY, "💨", remainingTime)
+            currentTimerY += 40f
+        }
+
+        if (gameStateManager.hasShield()) {
+            val remainingTime = gameStateManager.getShieldRemainingTime()
+            drawCountdownTimer(canvas, timerX, currentTimerY, "🛡️", remainingTime)
+            currentTimerY += 40f
+        }
+
+        if (player.hasCoinMagnet()) {
+            val remainingTime = player.getMagnetRemainingTime()
+            drawCountdownTimer(canvas, timerX, currentTimerY, "🧲", remainingTime)
+        }
+    }
+
+    private fun drawCountdownTimer(canvas: Canvas, x: Float, y: Float, icon: String, remainingTimeMs: Long) {
+        val seconds = (remainingTimeMs / 1000f).toInt() + 1
+
+        val bgPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(180, 0, 0, 0)
+        }
+        canvas.drawRoundRect(x, y, x + 120f, y + 30f, 8f, 8f, bgPaint)
+
+        val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = 20f
+            textAlign = Paint.Align.CENTER
+        }
+        canvas.drawText(icon, x + 15f, y + 20f, iconPaint)
+
+        val timerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = 18f
+            textAlign = Paint.Align.LEFT
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            setShadowLayer(2f, 1f, 1f, Color.BLACK)
+        }
+        canvas.drawText("${seconds}s", x + 35f, y + 20f, timerPaint)
+    }
+
+    private fun handleHazardCollision() {
+        handlePlayerDeath()
+    }
+
+    private fun respawnAtCheckpoint() {
+        val (checkpointX, checkpointY, mapId) = gameStateManager.getCheckpoint()
+
+        if (mapId == 1) {
+            // Respawn in tilemap 2
+            isOnTileMap2 = true
+            currentTileMap = tileMap2
+            player.x = checkpointX
+            player.y = checkpointY
+        } else {
+            // Respawn in tilemap 1
+            isOnTileMap2 = false
+            currentTileMap = tileMap
+            player.x = checkpointX
+            player.y = checkpointY
+        }
+
+        // Reset player velocity to prevent falling/moving after respawn
+        player.vx = 0f
+        player.vy = 0f
+
+        // Reset camera to follow player at new position
+        cameraX = player.x - (screenW / worldScale) / 2f
+        cameraY = player.y - (screenH / worldScale) / 2f
+
+        // Clamp camera bounds
+        val currentWorldWidth = if (isOnTileMap2) tileMap2.worldWidth else tileMap.worldWidth
+        val currentWorldHeight = if (isOnTileMap2) tileMap2.worldHeight else tileMap.worldHeight
+        val viewportWorldW = screenW / worldScale
+        val viewportWorldH = screenH / worldScale
+
+        cameraX = cameraX.coerceIn(0f, kotlin.math.max(0f, currentWorldWidth - viewportWorldW))
+        cameraY = cameraY.coerceIn(0f, kotlin.math.max(0f, currentWorldHeight - viewportWorldH))
+    }
+
+    private fun checkForCheckpoints(map: TileMapInterface, mapId: Int) {
+        val checkpointPositions = if (mapId == 0) {
+            listOf(1000f, 2000f, 3000f, 4000f, 5000f)
+        } else {
+            listOf(1000f, 2000f, 3000f)
+        }
+
+        for (checkpointX in checkpointPositions) {
+            if (player.x >= checkpointX - 50f && player.x <= checkpointX + 50f) {
+                val groundY = map.getGroundTopY() - player.height
+                gameStateManager.setCheckpoint(checkpointX, groundY, mapId)
+                break
+            }
+        }
+    }
+
+    private fun drawControlButtonVisible(canvas: Canvas, rect: RectF, text: String, pressed: Boolean) {
+        // Button background
+        btnPaint.color = if (pressed) Color.argb(180, 100, 100, 100) else Color.argb(120, 80, 80, 80)
+        canvas.drawRoundRect(rect, 20f, 20f, btnPaint)
+
+        // Button border
+        btnPaint.style = Paint.Style.STROKE
+        btnPaint.strokeWidth = 3f
+        btnPaint.color = Color.WHITE
+        canvas.drawRoundRect(rect, 20f, 20f, btnPaint)
+        btnPaint.style = Paint.Style.FILL
+
+        // Button text
+        btnTextPaint.color = if (pressed) Color.YELLOW else Color.WHITE
+        canvas.drawText(text, rect.centerX(), rect.centerY() + 10f, btnTextPaint)
+    }
+
+    private fun drawGameOverScreen(canvas: Canvas) {
+        // Semi-transparent overlay
+        val overlayPaint = Paint().apply {
+            color = Color.argb(200, 0, 0, 0)
+        }
+        canvas.drawRect(0f, 0f, screenW, screenH, overlayPaint)
+
+        // Draw game over image centered on screen
+        gameOverImage?.let { image ->
+            val imageW = screenW * 0.5f  // Slightly smaller for better proportions
+            val imageH = imageW * (image.height.toFloat() / image.width.toFloat())
+            val imageX = (screenW - imageW) / 2f  // Centered horizontally
+            val imageY = (screenH - imageH) / 2f - screenH * 0.1f  // Centered vertically with slight upward offset
+
+            val imageRect = RectF(imageX, imageY, imageX + imageW, imageY + imageH)
+            canvas.drawBitmap(image, null, imageRect, paint)
+
+            // "Play Again?" text positioned below the image
+            val questionPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.WHITE
+                textSize = 45f
+                textAlign = Paint.Align.CENTER
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                setShadowLayer(3f, 2f, 2f, Color.BLACK)
+            }
+            canvas.drawText("Play Again?", screenW / 2f, imageY + imageH - 250f, questionPaint)
+
+        } ?: run {
+            // Fallback text if image doesn't exist - centered
+            val gameOverPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.RED
+                textSize = 80f
+                textAlign = Paint.Align.CENTER
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                setShadowLayer(5f, 3f, 3f, Color.BLACK)
+            }
+            canvas.drawText("GAME OVER", screenW / 2f, screenH / 2f - 30f, gameOverPaint)
+
+            // "Play Again?" text
+            val questionPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.WHITE
+                textSize = 50f
+                textAlign = Paint.Align.CENTER
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                setShadowLayer(3f, 2f, 2f, Color.BLACK)
+            }
+            canvas.drawText("Play Again?", screenW / 2f, screenH / 2f - 30f, questionPaint)
+        }
+
+        // YES button
+        val yesPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(0, 180, 0) // Green
+        }
+        canvas.drawRoundRect(yesButton, 15f, 15f, yesPaint)
+
+        // YES text
+        val yesTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = 40f
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            setShadowLayer(2f, 1f, 1f, Color.BLACK)
+        }
+        val yesTextY = yesButton.centerY() - (yesTextPaint.descent() + yesTextPaint.ascent()) / 2f
+        canvas.drawText("YES", yesButton.centerX(), yesTextY, yesTextPaint)
+
+        // NO button
+        val noPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(180, 0, 0) // Red
+        }
+        canvas.drawRoundRect(noButton, 15f, 15f, noPaint)
+
+        // NO text
+        val noTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = 40f
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            setShadowLayer(2f, 1f, 1f, Color.BLACK)
+        }
+        val noTextY = noButton.centerY() - (noTextPaint.descent() + noTextPaint.ascent()) / 2f
+        canvas.drawText("NO", noButton.centerX(), noTextY, noTextPaint)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        val action = event.actionMasked
-        val idx = event.actionIndex
-        val pid = event.getPointerId(idx)
-
-        when (action) {
+        when (event.actionMasked) {
             MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> {
-                val x = event.getX(idx)
-                val y = event.getY(idx)
-                val which = whichControl(x, y)
-                if (which != null) {
-                    activePointers[pid] = which
-                    if (which == "jump") player.jump()
+                val pointerIndex = event.actionIndex
+                val pointerId = event.getPointerId(pointerIndex)
+                val x = event.getX(pointerIndex)
+                val y = event.getY(pointerIndex)
+
+                if (gameStateManager.isGameOver()) {
+                    // Handle game over screen touches
+                    if (yesButton.contains(x, y)) {
+                        startNewGame()
+                        return true
+                    } else if (noButton.contains(x, y)) {
+                        goToMenu()
+                        return true
+                    }
                 } else {
-                    activePointers[pid] = if (x < width / 2f) "left" else "right"
+                    // Handle game control touches
+                    when {
+                        btnLeft.contains(x, y) -> activePointers[pointerId] = "left"
+                        btnRight.contains(x, y) -> activePointers[pointerId] = "right"
+                        btnJump.contains(x, y) -> {
+                            activePointers[pointerId] = "jump"
+                            player.jump()
+                        }
+                        else -> {
+                            // Check inventory item touches for using potions
+                            val itemSize = 80f
+                            val spacing = 15f
+                            val startX = screenW - itemSize - 30f
+                            val startY = 120f
+                            var currentY = startY
+
+                            // Check health potion
+                            if (shopManager.getHealthPotions() > 0) {
+                                val itemRect = RectF(startX, currentY, startX + itemSize, currentY + itemSize)
+                                if (itemRect.contains(x, y)) {
+                                    useHealthPotion()
+                                    return true
+                                }
+                                currentY += itemSize + spacing
+                            }
+
+                            // Check jump potion
+                            if (shopManager.getJumpPotions() > 0) {
+                                val itemRect = RectF(startX, currentY, startX + itemSize, currentY + itemSize)
+                                if (itemRect.contains(x, y)) {
+                                    useJumpPotion()
+                                    return true
+                                }
+                                currentY += itemSize + spacing
+                            }
+
+                            // Check speed potion
+                            if (shopManager.getSpeedPotions() > 0) {
+                                val itemRect = RectF(startX, currentY, startX + itemSize, currentY + itemSize)
+                                if (itemRect.contains(x, y)) {
+                                    useSpeedPotion()
+                                    return true
+                                }
+                                currentY += itemSize + spacing
+                            }
+
+                            // Check shield potion
+                            if (shopManager.getShieldPotions() > 0) {
+                                val itemRect = RectF(startX, currentY, startX + itemSize, currentY + itemSize)
+                                if (itemRect.contains(x, y)) {
+                                    useShieldPotion()
+                                    return true
+                                }
+                                currentY += itemSize + spacing
+                            }
+
+                            if (shopManager.getMagnetPotions() > 0) {
+                                val itemRect = RectF(startX, currentY, startX + itemSize, currentY + itemSize)
+                                if (itemRect.contains(x, y)) {
+                                    useMagnetPotion()
+                                    return true
+                                }
+                            }
+                        }
+                    }
                 }
             }
-            MotionEvent.ACTION_MOVE -> {
-                for (i in 0 until event.pointerCount) {
-                    val p = event.getPointerId(i)
-                    val x = event.getX(i)
-                    val y = event.getY(i)
-                    val which = whichControl(x, y)
-                    if (which != null) activePointers[p] = which
-                }
-            }
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP, MotionEvent.ACTION_CANCEL -> {
-                activePointers.remove(pid)
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
+                val pointerIndex = event.actionIndex
+                val pointerId = event.getPointerId(pointerIndex)
+                activePointers.remove(pointerId)
             }
         }
         return true
     }
 
-    private fun whichControl(x: Float, y: Float): String? {
-        if (btnLeft.contains(x, y)) return "left"
-        if (btnRight.contains(x, y)) return "right"
-        if (btnJump.contains(x, y)) return "jump"
-        return null
+    // Potion usage methods
+    private fun useHealthPotion() {
+        if (shopManager.useHealthPotion()) {
+            val currentLives = gameStateManager.getLives()
+            if (currentLives < GameStateManager.MAX_LIVES) {
+                gameStateManager.setLives(currentLives + 1)
+            }
+        }
     }
 
-    fun pause() {
-        thread.running = false
-        try { thread.join() } catch (e: InterruptedException) {}
+    private fun useJumpPotion() {
+        if (shopManager.useJumpPotion()) {
+            player.applyJumpBoost(ShopManager.JUMP_EFFECT_DURATION)
+        }
     }
 
+    private fun useSpeedPotion() {
+        if (shopManager.useSpeedPotion()) {
+            player.applySpeedBoost(ShopManager.SPEED_EFFECT_DURATION)
+        }
+    }
+
+    private fun useShieldPotion() {
+        if (shopManager.useShieldPotion()) {
+            gameStateManager.applyShield(ShopManager.SHIELD_EFFECT_DURATION)
+        }
+    }
+
+    private fun useMagnetPotion() {
+        if (shopManager.useMagnetPotion()) {
+            player.applyCoinMagnet(ShopManager.MAGNET_EFFECT_DURATION)
+        }
+    }
+
+    // Activity lifecycle methods
     fun resume() {
         if (!thread.running) {
             thread = GameThread(holder, this)
             thread.running = true
             thread.start()
+        }
+    }
+
+    fun pause() {
+        thread.running = false
+        var retry = true
+        while (retry) {
+            try {
+                thread.join()
+                retry = false
+            } catch (_: InterruptedException) {
+                // Thread interrupted during join
+            }
         }
     }
 }

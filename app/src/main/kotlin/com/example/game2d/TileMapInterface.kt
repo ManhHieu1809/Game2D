@@ -10,7 +10,17 @@ interface TileMapInterface {
     fun draw(canvas: Canvas)
     fun update(deltaMs: Long)
     fun updateMonsters(deltaMs: Long, player: Player)
-    fun checkBulletHitAndRespawnIfNeeded(player: Player)
+    fun checkBulletHitAndRespawnIfNeeded(player: Player): Boolean
     fun resolvePlayerCollision(player: Player): Boolean
+    fun resolvePlayerCollisionSafe(player: Player) // Safe collision that ignores hazards during invulnerability
     fun isCompleted(player: Player): Boolean
+    fun checkCoinCollection(player: Player, onCoinCollected: (String) -> Unit)
+    fun checkHealthCollection(player: Player, onHealthCollected: (Int) -> Unit) // New method for health pickups
+    fun resetLevel() // Reset all entities, monsters, and pickups to initial state
+
+    // Hazard access methods for collision detection
+    fun getSpikes(): List<com.example.game2d.obstacles.Spike>
+    fun getSaws(): List<com.example.game2d.obstacles.Saw>
+
+    fun getLastCheckpoint(): Triple<Float, Float, Int>
 }

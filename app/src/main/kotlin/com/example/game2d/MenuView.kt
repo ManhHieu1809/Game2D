@@ -14,7 +14,7 @@ class MenuView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val btnRects = ArrayList<RectF>()
-    // Bạn có thể đổi label "CHARACTER" thành "OPTIONS" nếu opt = options
+    // Chỉ còn 3 nút: CHARACTER, START, EXIT (bỏ SHOP button)
     private val btnLabels = arrayListOf("CHARACTER", "START", "EXIT")
     private var pressedIndex = -1
 
@@ -37,17 +37,17 @@ class MenuView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
 
         // load button image pairs using exact names you provided first
         btnBitmaps.clear()
-        // BUTTON 0: use optbnt / optclick (user-provided)
+        // BUTTON 0: CHARACTER - use optbnt / optclick (user-provided)
         btnBitmaps.add(loadButtonPair(context,
             normalCandidates = listOf("optbnt", "optbtn", "opt_bnt", "opt_but", "optbnt"), // try close variants
             pressedCandidates = listOf("optclick", "opt_click", "optbnt_click", "optbtn_click")
         ))
-        // BUTTON 1: use playbtn / playclick
+        // BUTTON 1: START - use playbtn / playclick
         btnBitmaps.add(loadButtonPair(context,
             normalCandidates = listOf("playbtn", "btn_play", "play_btn", "play"),
             pressedCandidates = listOf("playclick", "play_click", "btn_play_click", "play_pressed")
         ))
-        // BUTTON 2: exit - try exitbtn/exitclick as fallback
+        // BUTTON 2: EXIT - try exitbtn/exitclick as fallback
         btnBitmaps.add(loadButtonPair(context,
             normalCandidates = listOf("exitbtn", "btn_exit", "exit"),
             pressedCandidates = listOf("exitclick", "btn_exit_click", "exit_pressed")
@@ -90,11 +90,13 @@ class MenuView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
             try {
                 thread.join()
                 retry = false
-            } catch (e: InterruptedException) {}
+            } catch (_: InterruptedException) {
+                // Thread interrupted
+            }
         }
     }
 
-    fun update(deltaMs: Long) { /* no animation now */ }
+    fun update(@Suppress("UNUSED_PARAMETER") deltaMs: Long) { /* no animation now */ }
 
     override fun draw(canvas: Canvas) {
         super.draw(canvas)
@@ -106,7 +108,9 @@ class MenuView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
             try {
                 val scaled = Bitmap.createScaledBitmap(bgBitmap!!, width, height, true)
                 canvas.drawBitmap(scaled, 0f, 0f, paint)
-            } catch (e: Exception) { canvas.drawColor(Color.rgb(70,160,110)) }
+            } catch (_: Exception) {
+                canvas.drawColor(Color.rgb(70,160,110))
+            }
         } else canvas.drawColor(Color.rgb(70,160,110))
 
         // logo/top panel
@@ -162,23 +166,47 @@ class MenuView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
-        val x = event.x; val y = event.y
         when (event.action) {
-            MotionEvent.ACTION_DOWN -> pressedIndex = findButtonIndex(x, y)
-            MotionEvent.ACTION_MOVE -> { if (findButtonIndex(x,y) != pressedIndex) pressedIndex = -1 }
-            MotionEvent.ACTION_UP -> {
-                val idx = findButtonIndex(x, y)
-                if (idx >= 0 && idx == pressedIndex) {
-                    when (idx) {
-                        0 -> openCharacter()
-                        1 -> startGame()
-                        2 -> exitGame()
+            MotionEvent.ACTION_DOWN -> {
+                val x = event.x
+                val y = event.y
+                for (i in btnRects.indices) {
+                    if (btnRects[i].contains(x, y)) {
+                        pressedIndex = i
+                        performClick()
+                        return true
                     }
                 }
-                pressedIndex = -1
             }
-            MotionEvent.ACTION_CANCEL -> pressedIndex = -1
+            MotionEvent.ACTION_UP -> {
+                val x = event.x
+                val y = event.y
+                if (pressedIndex >= 0) {
+                    val rect = btnRects[pressedIndex]
+                    if (rect.contains(x, y)) {
+                        when (pressedIndex) {
+                            0 -> { // CHARACTER (bây giờ có cả shop trong đó)
+                                val intent = Intent(context, CharacterActivity::class.java)
+                                context.startActivity(intent)
+                            }
+                            1 -> { // START
+                                val intent = Intent(context, GameActivity::class.java)
+                                context.startActivity(intent)
+                            }
+                            2 -> { // EXIT
+                                (context as Activity).finish()
+                            }
+                        }
+                    }
+                    pressedIndex = -1
+                }
+            }
         }
+        return true
+    }
+
+    override fun performClick(): Boolean {
+        super.performClick()
         return true
     }
 
@@ -232,9 +260,14 @@ class MenuView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
 
     private fun safeLoadDrawableByNames(ctx: Context, names: List<String>): Bitmap? {
         for (n in names) {
+            @Suppress("DiscouragedApi")
             val id = ctx.resources.getIdentifier(n, "drawable", ctx.packageName)
             if (id != 0) {
-                try { return BitmapFactory.decodeResource(ctx.resources, id) } catch (e: Exception) { }
+                try {
+                    return BitmapFactory.decodeResource(ctx.resources, id)
+                } catch (_: Exception) {
+                    // Continue to next candidate
+                }
             }
         }
         return null
@@ -248,7 +281,11 @@ class MenuView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
 
     fun pause() {
         thread.running = false
-        try { thread.join() } catch (e: InterruptedException) {}
+        try {
+            thread.join()
+        } catch (_: InterruptedException) {
+            // Thread interrupted
+        }
     }
 
     fun resume() {

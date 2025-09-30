@@ -3,6 +3,7 @@ package com.example.game2d
 import android.content.Context
 import android.graphics.*
 import com.example.game2d.entities.EntityManager
+import com.example.game2d.entities.HealthPickup
 import com.example.game2d.entities.Monster1
 import com.example.game2d.entities.Monster2
 import com.example.game2d.entities.Pickup
@@ -222,6 +223,7 @@ class TileMap(ctx: Context) : TileMapInterface {
         checkpoints += Checkpoint(6000f, groundTopY - 40f)
     }
 
+
     private fun setupClouds() {
         // Mario-style clouds - regular pattern
         for (i in 0..12) {
@@ -238,12 +240,19 @@ class TileMap(ctx: Context) : TileMapInterface {
         entities.addPickup(Pickup("cherry", 312f, groundTopY - 190f))
         entities.addPickup(Pickup("banana", 750f, groundTopY - 95f)) // Trên platform cao (adjusted)
 
+        // Thêm health pickup trong area đầu
+        entities.addHealthPickup(HealthPickup(400f, groundTopY - 50f, 1, "health_potion"))
+
         // Area 2: Pipe section
         entities.addPickup(Pickup("apple", 916f, groundTopY - 110f)) // Trên pipe (adjusted)
         entities.addPickup(Pickup("orange", 1016f, groundTopY - 158f)) // Trên brick pattern (adjusted)
         entities.addPickup(Pickup("cherry", 1216f, groundTopY - 142f)) // Trên pipe (adjusted)
         entities.addPickup(Pickup("strawberry", 1336f, groundTopY - 142f)) // Trên brick (adjusted)
         entities.addPickup(Pickup("banana", 1416f, groundTopY - 174f)) // Trên extra large pipe (adjusted)
+
+        // Thêm health pickups trong pipe section
+        entities.addHealthPickup(HealthPickup(1100f, groundTopY - 50f, 1, "health_potion"))
+        entities.addHealthPickup(HealthPickup(1300f, groundTopY - 172f, 2, "big_health"))
 
         // Area 3: Platform jumps
         entities.addPickup(Pickup("apple", 1750f, groundTopY - 78f)) // Platform (adjusted)
@@ -262,6 +271,10 @@ class TileMap(ctx: Context) : TileMapInterface {
         entities.addPickup(Pickup("apple", 2285f, groundTopY - 94f)) // Platform di động 1 (adjusted)
         entities.addPickup(Pickup("orange", 2400f, groundTopY - 126f)) // Platform di động 2 (adjusted)
 
+        // Thêm health pickups trong platform area
+        entities.addHealthPickup(HealthPickup(1900f, groundTopY - 156f, 1, "health_potion"))
+        entities.addHealthPickup(HealthPickup(2100f, groundTopY - 204f, 2, "big_health"))
+
         // Area 4: Castle approach
         entities.addPickup(Pickup("banana", 2550f, groundTopY - 62f)) // Stair (adjusted)
         entities.addPickup(Pickup("cherry", 2600f, groundTopY - 94f)) // Stair cao hơn (adjusted)
@@ -272,11 +285,19 @@ class TileMap(ctx: Context) : TileMapInterface {
         entities.addPickup(Pickup("orange", 2970f, groundTopY - 46f)) // Bridge center (adjusted)
         entities.addPickup(Pickup("banana", 3140f, groundTopY - 46f)) // Bridge (adjusted)
 
+        // Thêm health pickups trước bridge (khu vực nguy hiểm)
+        entities.addHealthPickup(HealthPickup(2700f, groundTopY - 50f, 2, "big_health"))
+        entities.addHealthPickup(HealthPickup(3050f, groundTopY - 76f, 1, "health_potion"))
+
         // Area 5: Underground
         entities.addPickup(Pickup("cherry", 3485f, groundTopY - 78f)) // Platform underground (adjusted)
         entities.addPickup(Pickup("strawberry", 3635f, groundTopY - 110f)) // Platform cao (adjusted)
         entities.addPickup(Pickup("apple", 3716f, groundTopY - 126f)) // Gần pipe (adjusted)
         entities.addPickup(Pickup("orange", 3800f, groundTopY - 94f)) // Moving platform (adjusted)
+
+        // Thêm health pickups trong underground (khu khó khăn)
+        entities.addHealthPickup(HealthPickup(3500f, groundTopY - 108f, 1, "health_potion"))
+        entities.addHealthPickup(HealthPickup(3650f, groundTopY - 140f, 2, "big_health"))
 
         // Area 6: Final challenge - vật phẩm quý
         entities.addPickup(Pickup("banana", 4140f, groundTopY - 62f)) // Platform (adjusted)
@@ -290,6 +311,11 @@ class TileMap(ctx: Context) : TileMapInterface {
         entities.addPickup(Pickup("orange", 4750f, groundTopY - 78f)) // Moving platform 2 (adjusted)
         entities.addPickup(Pickup("banana", 4900f, groundTopY - 126f)) // Moving platform 3 (adjusted)
 
+        // Thêm health pickups trong final challenge
+        entities.addHealthPickup(HealthPickup(4200f, groundTopY - 156f, 2, "big_health"))
+        entities.addHealthPickup(HealthPickup(4600f, groundTopY - 140f, 1, "health_potion"))
+        entities.addHealthPickup(HealthPickup(4850f, groundTopY - 156f, 3, "super_health")) // Super health trước kết thúc
+
         // Area 7: Victory area
         entities.addPickup(Pickup("cherry", 5250f, groundTopY - 78f)) // Platform trước castle (adjusted)
 
@@ -297,6 +323,10 @@ class TileMap(ctx: Context) : TileMapInterface {
         for (i in 0..4) {
             entities.addPickup(Pickup(fruits[i % 4], 5450f + i * 40f, groundTopY - 60f - i * 32f))
         }
+
+        // Victory health rewards
+        entities.addHealthPickup(HealthPickup(5300f, groundTopY - 108f, 2, "big_health"))
+        entities.addHealthPickup(HealthPickup(5600f, groundTopY - 128f, 3, "super_health"))
 
         // Final reward
         entities.addPickup(Pickup("strawberry", 5950f, groundTopY - 60f)) // Gần flag
@@ -485,6 +515,9 @@ class TileMap(ctx: Context) : TileMapInterface {
         entities.updateAll(deltaMs)
     }
 
+    override fun getLastCheckpoint(): Triple<Float, Float, Int> {
+        return Triple(lastCheckpointX, lastCheckpointY, 0)
+    }
 
     override fun updateMonsters(deltaMs: Long, player: Player) {
         for (m in monsters) {
@@ -503,13 +536,11 @@ class TileMap(ctx: Context) : TileMapInterface {
         monsters.removeAll { it is Monster2 && !it.isAlive() }
     }
 
-    override fun checkBulletHitAndRespawnIfNeeded(player: Player) {
-        val hit = monsters.any {
-            it is Monster1 && it.bulletHitPlayer(player)
-        }
-        if (hit) {
-            respawnPlayer(player)
-        }
+  override fun checkBulletHitAndRespawnIfNeeded(player: Player): Boolean {
+        // Check both Monster1 bullets and Monster2 body collision
+        val bulletHit = monsters.any { it is Monster1 && it.bulletHitPlayer(player) }
+        val monsterHit = handleMonsterBodyAndStomp(player)
+        return bulletHit || monsterHit
     }
 
     // ===================== COLLISION =====================
@@ -568,8 +599,8 @@ class TileMap(ctx: Context) : TileMapInterface {
         for (brick in bricks) collided = handleSolidCollision(player, brick) || collided
 
         // Hazards
-        for (sp in spikes) if (sp.isHit(player)) { respawnPlayer(player); return true }
-        for (sw in saws) if (sw.isHit(player)) { respawnPlayer(player); return true }
+        for (sp in spikes) if (sp.isHit(player)) return true
+        for (sw in saws) if (sw.isHit(player)) return true
 
         // World death
         if (player.y + player.height > worldHeight) {
@@ -577,17 +608,7 @@ class TileMap(ctx: Context) : TileMapInterface {
             collided = true
         }
 
-        for (pk in entities.getPickups()) {
-            if (!pk.collected) {
-                val dx = (player.x + player.width/2f) - pk.x
-                val dy = (player.y + player.height/2f) - pk.y
-                val r = 30f
-                if (dx*dx + dy*dy < r*r) {
-                    pk.onCollide(pk)
-                }
-            }
-        }
-
+        // Checkpoints
         for (cp in checkpoints) {
             if (!cp.activated && cp.tryActivate(player, 40f)) {
                 lastCheckpointX = cp.x + 60f
@@ -643,11 +664,10 @@ class TileMap(ctx: Context) : TileMapInterface {
                     it.remove()
                     player.y = m.y - player.height - 1f
                     player.vy = -280f
-                    return true
+                    continue
                 }
                 if (RectF.intersects(m.getBounds(), pr)) {
-                    respawnPlayer(player)
-                    return true
+                    return true // Player hit monster - will cause death
                 }
             } else if (m is Monster2) {
                 if (!m.isAlive()) { it.remove(); continue }
@@ -655,14 +675,12 @@ class TileMap(ctx: Context) : TileMapInterface {
                     it.remove()
                     player.y = m.y - player.height - 1f
                     player.vy = -280f
-                    return true
+                    continue
                 }
                 if (RectF.intersects(m.getBounds(), pr)) {
-                    respawnPlayer(player)
-                    return true
+                    return true // Player hit Monster2 - will cause death
                 }
             }
-            // Các monster type khác có thể xử lý ở đây nếu cần
         }
         return false
     }
@@ -678,5 +696,132 @@ class TileMap(ctx: Context) : TileMapInterface {
     // Method to check if player reached the final checkpoint (end of tilemap 1)
     override fun isCompleted(player: Player): Boolean {
         return player.x >= 6000f  // Near the final checkpoint of tilemap 1
+    }
+
+    // Implementation of checkCoinCollection from interface
+    override fun checkCoinCollection(player: Player, onCoinCollected: (String) -> Unit) {
+        val magnetRange = player.getMagnetRange()
+        val hasMagnet = player.hasCoinMagnet()
+
+        for (pk in entities.getPickups()) {
+            if (!pk.collected) {
+                val playerCenterX = player.x + player.width/2f
+                val playerCenterY = player.y + player.height/2f
+                val dx = playerCenterX - pk.x
+                val dy = playerCenterY - pk.y
+                val distance = kotlin.math.sqrt(dx*dx + dy*dy)
+
+                // Normal collection range
+                val collectionRange = 30f
+
+                // Check if within collection range
+                if (distance < collectionRange) {
+                    pk.onCollide(pk)
+                    onCoinCollected(pk.type) // Notify GameView about coin collection
+                }
+
+                else if (hasMagnet && distance < magnetRange) {
+                    val magnetStrength = 5f
+                    val normalizedDx = dx / distance
+                    val normalizedDy = dy / distance
+
+                    pk.x += normalizedDx * magnetStrength
+                    pk.y += normalizedDy * magnetStrength
+
+                    // Also check if it's now close enough to collect after movement
+                    val newDistance = kotlin.math.sqrt(
+                        (playerCenterX - pk.x) * (playerCenterX - pk.x) +
+                        (playerCenterY - pk.y) * (playerCenterY - pk.y)
+                    )
+                    if (newDistance < collectionRange) {
+                        pk.onCollide(pk)
+                        onCoinCollected(pk.type)
+                    }
+                }
+            }
+        }
+    }
+
+    override fun resetLevel() {
+        monsters.clear()
+        entities.clear()
+
+        lastCheckpointX = 100f
+        lastCheckpointY = groundTopY - 100f // Approximate player height
+
+        setupPickups()
+        setupMonsters()
+
+        // Reset all checkpoints to inactive
+        checkpoints.forEach { it.reset() }
+    }
+
+
+    override fun resolvePlayerCollisionSafe(player: Player) {
+
+        if (player.x < 0f) { player.x = 0f; player.vx = 0f }
+        if (player.x + player.width > worldWidth) {
+            player.x = worldWidth - player.width; player.vx = 0f
+        }
+        if (player.y < 0f) { player.y = 0f; if (player.vy < 0f) player.vy = 0f }
+
+        if (player.y + player.height > groundTopY && player.vy >= 0f) {
+            player.y = groundTopY - player.height
+            player.vy = 0f
+        }
+
+        for (p in platforms) {
+            val pr = RectF(player.x, player.y, player.x + player.width, player.y + player.height)
+            if (pr.right > p.left && pr.left < p.right && player.vy > 0f) {
+                if (pr.bottom > p.top && pr.top < p.top) {
+                    val prevBottom = player.prevY + player.height
+                    if (prevBottom <= p.top + 3f) {
+                        player.y = p.top - player.height
+                        player.vy = 0f
+                    }
+                }
+            }
+        }
+
+        for (mp in movingPlatforms) {
+            val mpr = mp.rect()
+            val pr = RectF(player.x, player.y, player.x + player.width, player.y + player.height)
+            if (pr.right > mpr.left && pr.left < mpr.right && player.vy > 0f) {
+                if (pr.bottom > mpr.top && pr.top < mpr.top) {
+                    val prevBottom = player.prevY + player.height
+                    if (prevBottom <= mpr.top + 3f) {
+                        player.y = mpr.top - player.height
+                        player.vy = 0f
+                        // Move with platform
+                        player.x += mp.speed * mp.direction * (1f / 60f)
+                    }
+                }
+            }
+        }
+
+        for (pipe in pipes) handleSolidCollision(player, pipe)
+        for (brick in bricks) handleSolidCollision(player, brick)
+
+        for (cp in checkpoints) {
+            if (!cp.activated && cp.tryActivate(player, 40f)) {
+                lastCheckpointX = cp.x + 60f
+                lastCheckpointY = groundTopY - player.height
+            }
+        }
+    }
+
+    override fun getSpikes(): List<Spike> = spikes
+    override fun getSaws(): List<Saw> = saws
+
+    // Implementation of checkHealthCollection from interface
+    override fun checkHealthCollection(player: Player, onHealthCollected: (Int) -> Unit) {
+        for (healthPickup in entities.getHealthPickups()) {
+            if (healthPickup.checkCollision(player)) {
+                val healAmount = healthPickup.collect()
+                if (healAmount > 0) {
+                    onHealthCollected(healAmount)
+                }
+            }
+        }
     }
 }

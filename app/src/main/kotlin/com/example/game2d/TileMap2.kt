@@ -3,6 +3,7 @@ package com.example.game2d
 import android.content.Context
 import android.graphics.*
 import com.example.game2d.entities.EntityManager
+import com.example.game2d.entities.HealthPickup
 import com.example.game2d.entities.Monster1
 import com.example.game2d.entities.Monster2
 import com.example.game2d.entities.Pickup
@@ -15,33 +16,27 @@ import kotlin.math.min
 
 class TileMap2(ctx: Context) : TileMapInterface {
 
-    // World size - tilemap 2 lớn hơn và phức tạp hơn
-    override val worldWidth = 8000f  // Dài hơn tilemap 1
+    override val worldWidth = 8000f
     override val worldHeight = 720f
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val groundTopY = worldHeight * 0.8f
 
-    // Hình học tĩnh
     private val platforms = ArrayList<RectF>()
     private val pipes = ArrayList<RectF>()
     private val bricks = ArrayList<RectF>()
 
-    // Vật cản/hazard
     private val spikes = ArrayList<Spike>()
     private val saws = ArrayList<Saw>()
     private val movingPlatforms = ArrayList<MovingPlatform>()
     private val checkpoints = ArrayList<Checkpoint>()
 
-    // Cloud - style tương tự
     data class Cloud(var x: Float, var baseY: Float, var vx: Float, val type: Int = 0)
     private val clouds = ArrayList<Cloud>()
 
-    // Entity động
     private val entities = EntityManager()
     private val monsters = mutableListOf<com.example.game2d.entities.Entity>()
 
-    // Checkpoint
     private var lastCheckpointX = 100f
     private var lastCheckpointY = 0f
 
@@ -57,24 +52,18 @@ class TileMap2(ctx: Context) : TileMapInterface {
         setupMonsters()
     }
 
-    // Thiết kế level 2 với độ khó nâng cao nhưng vẫn hợp lý
     private fun setupAdvancedLevel() {
 
-        // ===== AREA 1: Forest Entry (0-1000px) - SỬA LẠI DỄ HÔN =====
-        // Checkpoint đầu
         checkpoints += Checkpoint(150f, groundTopY - 40f)
 
-        // Forest pipes nhỏ hơn, dễ qua hơn
-        pipes.add(RectF(300f, groundTopY - 64f, 332f, groundTopY))  // Nhỏ hơn
-        pipes.add(RectF(450f, groundTopY - 80f, 482f, groundTopY))  // Thấp hơn
-        pipes.add(RectF(600f, groundTopY - 96f, 632f, groundTopY))  // Vừa phải
+        pipes.add(RectF(300f, groundTopY - 64f, 332f, groundTopY))
+        pipes.add(RectF(450f, groundTopY - 80f, 482f, groundTopY))
+        pipes.add(RectF(600f, groundTopY - 96f, 632f, groundTopY))
 
-        // Platform trong rừng với gaps dễ nhảy hơn
-        platforms.add(RectF(350f, groundTopY - 48f, 420f, groundTopY - 32f))  // Dài hơn
-        platforms.add(RectF(500f, groundTopY - 32f, 580f, groundTopY - 16f))  // Thấp hơn, dài hơn
-        platforms.add(RectF(650f, groundTopY - 48f, 750f, groundTopY - 32f))  // Dài hơn
+        platforms.add(RectF(350f, groundTopY - 48f, 420f, groundTopY - 32f))
+        platforms.add(RectF(500f, groundTopY - 32f, 580f, groundTopY - 16f))
+        platforms.add(RectF(650f, groundTopY - 48f, 750f, groundTopY - 32f))
 
-        // Overhead branches cao hơn để không cản đường
         for (i in 0..2) {
             bricks.add(RectF(380f + i * 32f, groundTopY - 200f, 412f + i * 32f, groundTopY - 168f))  // Cao hơn
         }
@@ -82,85 +71,67 @@ class TileMap2(ctx: Context) : TileMapInterface {
             bricks.add(RectF(520f + i * 32f, groundTopY - 220f, 552f + i * 32f, groundTopY - 188f))  // Cao hơn
         }
 
-        // Loại bỏ spike khó - thay bằng platform dễ hơn
         platforms.add(RectF(780f, groundTopY - 32f, 850f, groundTopY - 16f))  // Platform thay spike
 
-        // Moving platform dễ hơn
         movingPlatforms += MovingPlatform(870f, groundTopY - 48f, 850f, 900f, 20f, 1)  // Chậm hơn, range nhỏ
 
-        // Checkpoint
         checkpoints += Checkpoint(950f, groundTopY - 40f)
 
-        // ===== AREA 2: Gentle Hills (1000-2200px) - SỬA LẠI DỄ HƠN =====
-        // Stair pattern dễ leo hơn
-        for (i in 0..3) {  // Giảm từ 5 xuống 3 step
-            for (j in 0..(3-i)) {  // Giảm width
+        for (i in 0..3) {
+            for (j in 0..(3-i)) {
                 bricks.add(RectF(
                     1100f + j * 32f,
-                    groundTopY - 32f - i * 24f,  // Giảm height mỗi step từ 32f xuống 24f
+                    groundTopY - 32f - i * 24f,
                     1132f + j * 32f,
-                    groundTopY - 8f - i * 24f    // Thấp hơn
+                    groundTopY - 8f - i * 24f
                 ))
             }
         }
 
-        // Platform thấp và dễ nhảy hơn
-        platforms.add(RectF(1250f, groundTopY - 80f, 1400f, groundTopY - 64f))   // Thấp hơn, dài hơn
-        platforms.add(RectF(1450f, groundTopY - 64f, 1550f, groundTopY - 48f))   // Thấp hơn
-        platforms.add(RectF(1600f, groundTopY - 48f, 1700f, groundTopY - 32f))   // Thấp hơn
 
-        // Platform nhỏ cho path phụ - dễ hơn
-        platforms.add(RectF(1350f, groundTopY - 112f, 1400f, groundTopY - 96f))  // Thấp hơn
-        platforms.add(RectF(1500f, groundTopY - 96f, 1550f, groundTopY - 80f))   // Thấp hơn
+        platforms.add(RectF(1250f, groundTopY - 80f, 1400f, groundTopY - 64f))
+        platforms.add(RectF(1450f, groundTopY - 64f, 1550f, groundTopY - 48f))
+        platforms.add(RectF(1600f, groundTopY - 48f, 1700f, groundTopY - 32f))
 
-        // Loại bỏ saws khó - thay bằng platforms dễ
+        platforms.add(RectF(1350f, groundTopY - 112f, 1400f, groundTopY - 96f))
+        platforms.add(RectF(1500f, groundTopY - 96f, 1550f, groundTopY - 80f))
+
         platforms.add(RectF(1720f, groundTopY - 32f, 1800f, groundTopY - 16f))
         platforms.add(RectF(1820f, groundTopY - 48f, 1900f, groundTopY - 32f))
 
-        // Moving platforms dễ hơn
         movingPlatforms += MovingPlatform(1950f, groundTopY - 64f, 1930f, 1980f, 20f, 1)  // Chậm, range nhỏ
         movingPlatforms += MovingPlatform(2050f, groundTopY - 48f, 2030f, 2080f, 15f, -1) // Rất chậm
 
-        // Checkpoint
         checkpoints += Checkpoint(2150f, groundTopY - 40f)
 
-        // ===== AREA 3: Easy Cave (2200-3500px) - SỬA LẠI ĐƠN GIẢN =====
-        // Underground ceiling cao hơn
-        for (i in 0..15) {  // Giảm từ 20 xuống 15
+        for (i in 0..15) {
             bricks.add(RectF(2200f + i * 32f, groundTopY - 240f, 2232f + i * 32f, groundTopY - 208f))  // Cao hơn nhiều
         }
 
-        // Cave platforms đơn giản hơn
-        platforms.add(RectF(2300f, groundTopY - 48f, 2450f, groundTopY - 32f))   // Dài hơn, thấp hơn
-        platforms.add(RectF(2500f, groundTopY - 32f, 2650f, groundTopY - 16f))   // Ground level gần như
-        platforms.add(RectF(2700f, groundTopY - 48f, 2850f, groundTopY - 32f))   // Dài hơn
+        platforms.add(RectF(2300f, groundTopY - 48f, 2450f, groundTopY - 32f))
+        platforms.add(RectF(2500f, groundTopY - 32f, 2650f, groundTopY - 16f))
+        platforms.add(RectF(2700f, groundTopY - 48f, 2850f, groundTopY - 32f))
 
-        // Loại bỏ stalactites (hanging spikes) - quá khó
-        // Thay bằng platform cao để thu thập items
         platforms.add(RectF(2350f, groundTopY - 120f, 2400f, groundTopY - 104f))
         platforms.add(RectF(2550f, groundTopY - 100f, 2600f, groundTopY - 84f))
 
-        // Moving platforms trong cave - dễ hơn
-        movingPlatforms += MovingPlatform(2900f, groundTopY - 64f, 2880f, 2920f, 15f, 1)  // Chậm
-        movingPlatforms += MovingPlatform(3000f, groundTopY - 48f, 2980f, 3020f, 12f, -1) // Rất chậm
+        movingPlatforms += MovingPlatform(2900f, groundTopY - 64f, 2880f, 2920f, 15f, 1)
+        movingPlatforms += MovingPlatform(3000f, groundTopY - 48f, 2980f, 3020f, 12f, -1)
 
-        // Underground pipes thấp hơn
-        pipes.add(RectF(2750f, groundTopY - 64f, 2782f, groundTopY - 32f))  // Thấp hơn
-        pipes.add(RectF(3100f, groundTopY - 80f, 3132f, groundTopY))        // Thấp hơn
+        pipes.add(RectF(2750f, groundTopY - 64f, 2782f, groundTopY - 32f))
+        pipes.add(RectF(3100f, groundTopY - 80f, 3132f, groundTopY))
 
-        // Loại bỏ saw trong cave - thay bằng platform
+
         platforms.add(RectF(3150f, groundTopY - 64f, 3250f, groundTopY - 48f))
 
-        // Cave exit climb dễ hơn
-        for (i in 0..3) {  // Giảm từ 4 xuống 3
+
+        for (i in 0..3) {
             platforms.add(RectF(3300f + i * 60f, groundTopY - 24f - i * 16f, 3350f + i * 60f, groundTopY - 8f - i * 16f))  // Thấp hơn, gần hơn
         }
 
         // Checkpoint cave exit
         checkpoints += Checkpoint(3480f, groundTopY - 40f)
 
-        // ===== AREA 4: Sky Platforms (3500-5000px) - SỬA LẠI DỄ HƠN =====
-        // Floating islands thấp hơn và gần nhau hơn
         platforms.add(RectF(3600f, groundTopY - 64f, 3720f, groundTopY - 48f))   // Thấp hơn, dài hơn
         platforms.add(RectF(3760f, groundTopY - 80f, 3860f, groundTopY - 64f))   // Gap nhỏ hơn
         platforms.add(RectF(3900f, groundTopY - 64f, 4000f, groundTopY - 48f))   // Thấp hơn
@@ -172,13 +143,10 @@ class TileMap2(ctx: Context) : TileMapInterface {
         platforms.add(RectF(3820f, groundTopY - 140f, 3860f, groundTopY - 124f)) // Thấp hơn
         platforms.add(RectF(3960f, groundTopY - 120f, 4000f, groundTopY - 104f)) // Thấp hơn
 
-        // Moving cloud platforms dễ hơn
         movingPlatforms += MovingPlatform(4320f, groundTopY - 80f, 4300f, 4350f, 25f, 1)  // Thấp hơn
         movingPlatforms += MovingPlatform(4450f, groundTopY - 64f, 4430f, 4480f, 20f, -1) // Thấp hơn
         movingPlatforms += MovingPlatform(4580f, groundTopY - 96f, 4560f, 4610f, 18f, 1)  // Thấp hơn
 
-        // Loại bỏ wind currents (saws) - quá khó
-        // Thay bằng platforms
         platforms.add(RectF(4650f, groundTopY - 48f, 4750f, groundTopY - 32f))
 
         // Floating brick formations thấp hơn
@@ -189,57 +157,49 @@ class TileMap2(ctx: Context) : TileMapInterface {
         // Island checkpoint
         checkpoints += Checkpoint(4800f, groundTopY - 40f)
 
-        // ===== AREA 5: Simple Castle (5000-6500px) - ĐƠN GIẢN HÓA =====
-        // Castle walls thấp hơn
         for (i in 0..3) {
             bricks.add(RectF(5100f + i * 32f, groundTopY - 96f, 5132f + i * 32f, groundTopY - 64f))   // Thấp hơn
             bricks.add(RectF(5100f + i * 32f, groundTopY - 64f, 5132f + i * 32f, groundTopY - 32f))
         }
 
-        // Castle towers đơn giản hơn
+
         for (i in 0..2) {
-            for (j in 0..2) {  // Giảm từ 4 xuống 2
+            for (j in 0..2) {
                 bricks.add(RectF(
                     5300f + i * 120f + j * 32f,
-                    groundTopY - 96f + j * 16f,   // Thấp hơn
+                    groundTopY - 96f + j * 16f,
                     5332f + i * 120f + j * 32f,
                     groundTopY - 80f + j * 16f
                 ))
             }
         }
 
-        // Loại bỏ moat spikes - quá khó
-        // Thay bằng platform bridge dễ qua
+
         platforms.add(RectF(5200f, groundTopY - 16f, 5280f, groundTopY))
         platforms.add(RectF(5580f, groundTopY - 16f, 5660f, groundTopY))
 
-        // Drawbridge (platform tĩnh) - không moving
+
         platforms.add(RectF(5280f, groundTopY - 16f, 5580f, groundTopY))
 
-        // Castle interior platforms dễ hơn
-        platforms.add(RectF(5700f, groundTopY - 32f, 5850f, groundTopY - 16f))  // Dài hơn, thấp hơn
-        platforms.add(RectF(5720f, groundTopY - 80f, 5830f, groundTopY - 64f))  // Dài hơn, thấp hơn
-        platforms.add(RectF(5750f, groundTopY - 128f, 5800f, groundTopY - 112f)) // Thấp hơn
+        platforms.add(RectF(5700f, groundTopY - 32f, 5850f, groundTopY - 16f))
+        platforms.add(RectF(5720f, groundTopY - 80f, 5830f, groundTopY - 64f))
+        platforms.add(RectF(5750f, groundTopY - 128f, 5800f, groundTopY - 112f))
 
         // Throne room dễ hơn
-        platforms.add(RectF(6000f, groundTopY - 48f, 6200f, groundTopY - 32f))  // Thấp hơn
+        platforms.add(RectF(6000f, groundTopY - 48f, 6200f, groundTopY - 32f))
 
-        // Throne stairs dễ leo hơn
-        for (i in 0..2) {  // Giảm từ 3 xuống 2
+
+        for (i in 0..2) {
             bricks.add(RectF(
-                6050f + i * 40f,  // Xa hơn
-                groundTopY - 48f - i * 12f,  // Step nhỏ hơn
-                6090f + i * 40f,  // Rộng hơn
+                6050f + i * 40f,
+                groundTopY - 48f - i * 12f,
+                6090f + i * 40f,
                 groundTopY - 32f - i * 12f
             ))
         }
 
-        // Castle checkpoint
         checkpoints += Checkpoint(6250f, groundTopY - 40f)
 
-        // ===== AREA 6: Victory Garden (6500-8000px) - GIỮ NGUYÊN =====
-        // Beautiful garden area as reward
-        // Gentle platforms
         platforms.add(RectF(6500f, groundTopY - 32f, 6650f, groundTopY - 16f))  // Sớm hơn
         platforms.add(RectF(6700f, groundTopY - 48f, 6800f, groundTopY - 32f))
         platforms.add(RectF(6850f, groundTopY - 32f, 6950f, groundTopY - 16f))   // Thấp hơn
@@ -288,6 +248,9 @@ class TileMap2(ctx: Context) : TileMapInterface {
         entities.addPickup(Pickup("orange", 825f, groundTopY - 62f))    // Trên platform thay spike
         entities.addPickup(Pickup("strawberry", 885f, groundTopY - 78f)) // Trên moving platform
 
+        // Thêm health pickups trong area 1
+        entities.addHealthPickup(HealthPickup(450f, groundTopY - 50f, 1, "health_potion"))
+
         // Area 2: Gentle Hills - vị trí dễ lấy hơn
         entities.addPickup(Pickup("banana", 1125f, groundTopY - 62f))   // Trên stair
         entities.addPickup(Pickup("apple", 1325f, groundTopY - 110f))   // Trên platform
@@ -297,6 +260,10 @@ class TileMap2(ctx: Context) : TileMapInterface {
         entities.addPickup(Pickup("banana", 1860f, groundTopY - 78f))   // Trên platform mới
         entities.addPickup(Pickup("apple", 1975f, groundTopY - 94f))    // Trên moving platform
 
+        // Thêm health pickups trong area 2
+        entities.addHealthPickup(HealthPickup(1375f, groundTopY - 142f, 1, "health_potion"))
+        entities.addHealthPickup(HealthPickup(1875f, groundTopY - 78f, 2, "big_health"))
+
         // Area 3: Easy Cave - vị trí đơn giản
         entities.addPickup(Pickup("apple", 2375f, groundTopY - 78f))    // Trên platform dài
         entities.addPickup(Pickup("banana", 2375f, groundTopY - 150f))  // Trên platform cao
@@ -305,6 +272,11 @@ class TileMap2(ctx: Context) : TileMapInterface {
         entities.addPickup(Pickup("strawberry", 2775f, groundTopY - 78f)) // Trên platform
         entities.addPickup(Pickup("apple", 2925f, groundTopY - 94f))    // Trên moving platform
         entities.addPickup(Pickup("cherry", 3200f, groundTopY - 94f))   // Trên platform mới
+
+        // Thêm health pickups trong cave (nơi khó khăn)
+        entities.addHealthPickup(HealthPickup(2375f, groundTopY - 180f, 1, "health_potion")) // Trên platform cao
+        entities.addHealthPickup(HealthPickup(2925f, groundTopY - 124f, 1, "health_potion"))
+        entities.addHealthPickup(HealthPickup(3200f, groundTopY - 124f, 2, "big_health"))
 
         // Area 4: Sky Platforms - vị trí hợp lý hơn
         entities.addPickup(Pickup("strawberry", 3660f, groundTopY - 94f)) // Thấp hơn
@@ -319,11 +291,21 @@ class TileMap2(ctx: Context) : TileMapInterface {
         entities.addPickup(Pickup("apple", 4595f, groundTopY - 126f))      // Thấp hơn
         entities.addPickup(Pickup("cherry", 4700f, groundTopY - 78f))      // Trên platform mới
 
+        // Thêm health pickups trong sky platforms (area khó)
+        entities.addHealthPickup(HealthPickup(3700f, groundTopY - 150f, 1, "health_potion"))
+        entities.addHealthPickup(HealthPickup(4120f, groundTopY - 156f, 2, "big_health"))
+        entities.addHealthPickup(HealthPickup(4450f, groundTopY - 124f, 1, "health_potion"))
+
         // Area 5: Simple Castle - vị trí dễ lấy
         entities.addPickup(Pickup("cherry", 5775f, groundTopY - 62f))      // Thấp hơn
         entities.addPickup(Pickup("orange", 5775f, groundTopY - 110f))     // Thấp hơn
         entities.addPickup(Pickup("apple", 6100f, groundTopY - 78f))       // Thấp hơn
         entities.addPickup(Pickup("strawberry", 6075f, groundTopY - 78f))  // Trên stair
+
+        // Thêm health pickups trong castle (boss area)
+        entities.addHealthPickup(HealthPickup(5400f, groundTopY - 50f, 2, "big_health"))
+        entities.addHealthPickup(HealthPickup(5775f, groundTopY - 140f, 1, "health_potion"))
+        entities.addHealthPickup(HealthPickup(6075f, groundTopY - 108f, 3, "super_health")) // Super health trước boss
 
         // Area 6: Victory Garden - giữ nguyên vì đã dễ
         entities.addPickup(Pickup("banana", 6575f, groundTopY - 62f))
@@ -332,11 +314,18 @@ class TileMap2(ctx: Context) : TileMapInterface {
         entities.addPickup(Pickup("orange", 7050f, groundTopY - 78f))
         entities.addPickup(Pickup("strawberry", 7300f, groundTopY - 94f))
 
+        // Victory health rewards
+        entities.addHealthPickup(HealthPickup(6750f, groundTopY - 108f, 2, "big_health"))
+        entities.addHealthPickup(HealthPickup(7300f, groundTopY - 124f, 3, "super_health"))
+
         // Victory rewards - dễ lấy hơn
         val victoryFruits = arrayOf("strawberry", "banana", "apple", "cherry", "orange")
         for (i in 0..4) {
             entities.addPickup(Pickup(victoryFruits[i], 7500f + i * 40f, groundTopY - 50f - i * 16f)) // Thấp hơn, gần hơn
         }
+
+        // Final super health reward
+        entities.addHealthPickup(HealthPickup(7600f, groundTopY - 130f, 3, "super_health"))
     }
 
     private fun setupMonsters() {
@@ -528,13 +517,11 @@ class TileMap2(ctx: Context) : TileMapInterface {
         monsters.removeAll { it is Monster2 && !it.isAlive() }
     }
 
-    override fun checkBulletHitAndRespawnIfNeeded(player: Player) {
-        val hit = monsters.any {
-            it is Monster1 && it.bulletHitPlayer(player)
-        }
-        if (hit) {
-            respawnPlayer(player)
-        }
+    override fun checkBulletHitAndRespawnIfNeeded(player: Player): Boolean {
+        // Check both Monster1 bullets and Monster2 body collision
+        val bulletHit = monsters.any { it is Monster1 && it.bulletHitPlayer(player) }
+        val monsterHit = handleMonsterBodyAndStomp(player)
+        return bulletHit || monsterHit
     }
 
     // ===================== COLLISION =====================
@@ -587,33 +574,17 @@ class TileMap2(ctx: Context) : TileMapInterface {
             }
         }
 
-        // Solid collisions
         for (pipe in pipes) collided = handleSolidCollision(player, pipe) || collided
         for (brick in bricks) collided = handleSolidCollision(player, brick) || collided
 
-        // Hazards
         for (sp in spikes) if (sp.isHit(player)) { respawnPlayer(player); return true }
         for (sw in saws) if (sw.isHit(player)) { respawnPlayer(player); return true }
 
-        // World death
         if (player.y + player.height > worldHeight) {
             respawnPlayer(player)
             collided = true
         }
 
-        // Pickups
-        for (pk in entities.getPickups()) {
-            if (!pk.collected) {
-                val dx = (player.x + player.width/2f) - pk.x
-                val dy = (player.y + player.height/2f) - pk.y
-                val r = 30f
-                if (dx*dx + dy*dy < r*r) {
-                    pk.onCollide(pk)
-                }
-            }
-        }
-
-        // Checkpoints
         for (cp in checkpoints) {
             if (!cp.activated && cp.tryActivate(player, 40f)) {
                 lastCheckpointX = cp.x + 60f
@@ -621,7 +592,6 @@ class TileMap2(ctx: Context) : TileMapInterface {
             }
         }
 
-        // Monster interactions
         if (handleMonsterBodyAndStomp(player)) return true
 
         return collided
@@ -669,10 +639,9 @@ class TileMap2(ctx: Context) : TileMapInterface {
                     it.remove()
                     player.y = m.y - player.height - 1f
                     player.vy = -280f
-                    return true
+                    continue
                 }
                 if (RectF.intersects(m.getBounds(), pr)) {
-                    respawnPlayer(player)
                     return true
                 }
             } else if (m is Monster2) {
@@ -681,10 +650,9 @@ class TileMap2(ctx: Context) : TileMapInterface {
                     it.remove()
                     player.y = m.y - player.height - 1f
                     player.vy = -280f
-                    return true
+                    continue
                 }
                 if (RectF.intersects(m.getBounds(), pr)) {
-                    respawnPlayer(player)
                     return true
                 }
             }
@@ -699,8 +667,129 @@ class TileMap2(ctx: Context) : TileMapInterface {
         player.vy = 0f
     }
 
-    // Method to check if player reached the final checkpoint (end of tilemap 2)
     override fun isCompleted(player: Player): Boolean {
-        return player.x >= 7800f  // Near the final checkpoint
+        return player.x >= 7800f
     }
+
+    override fun checkCoinCollection(player: Player, onCoinCollected: (String) -> Unit) {
+        val magnetRange = player.getMagnetRange()
+        val hasMagnet = player.hasCoinMagnet()
+
+        for (pk in entities.getPickups()) {
+            if (!pk.collected) {
+                val playerCenterX = player.x + player.width/2f
+                val playerCenterY = player.y + player.height/2f
+                val dx = playerCenterX - pk.x
+                val dy = playerCenterY - pk.y
+                val distance = kotlin.math.sqrt(dx*dx + dy*dy)
+
+                val collectionRange = 30f
+
+                if (distance < collectionRange) {
+                    pk.onCollide(pk)
+                    onCoinCollected(pk.type)
+                }
+                else if (hasMagnet && distance < magnetRange) {
+                    val magnetStrength = 5f
+                    val normalizedDx = dx / distance
+                    val normalizedDy = dy / distance
+
+                    pk.x += normalizedDx * magnetStrength
+                    pk.y += normalizedDy * magnetStrength
+
+                    val newDistance = kotlin.math.sqrt(
+                        (playerCenterX - pk.x) * (playerCenterX - pk.x) +
+                        (playerCenterY - pk.y) * (playerCenterY - pk.y)
+                    )
+                    if (newDistance < collectionRange) {
+                        pk.onCollide(pk)
+                        onCoinCollected(pk.type)
+                    }
+                }
+            }
+        }
+    }
+
+    override fun checkHealthCollection(player: Player, onHealthCollected: (Int) -> Unit) {
+        for (healthPickup in entities.getHealthPickups()) {
+            if (healthPickup.checkCollision(player)) {
+                val healAmount = healthPickup.collect()
+                if (healAmount > 0) {
+                    onHealthCollected(healAmount)
+                }
+            }
+        }
+    }
+
+    override fun resetLevel() {
+        monsters.clear()
+        entities.clear()
+
+        lastCheckpointX = 100f
+        lastCheckpointY = groundTopY - 100f
+
+        setupPickups()
+        setupMonsters()
+
+        checkpoints.forEach { it.reset() }
+    }
+
+    override fun getLastCheckpoint(): Triple<Float, Float, Int> {
+        return Triple(lastCheckpointX, lastCheckpointY, 0)
+    }
+
+    override fun resolvePlayerCollisionSafe(player: Player) {
+        // World bounds
+        if (player.x < 0f) { player.x = 0f; player.vx = 0f }
+        if (player.x + player.width > worldWidth) {
+            player.x = worldWidth - player.width; player.vx = 0f
+        }
+        if (player.y < 0f) { player.y = 0f; if (player.vy < 0f) player.vy = 0f }
+
+        if (player.y + player.height > groundTopY && player.vy >= 0f) {
+            player.y = groundTopY - player.height
+            player.vy = 0f
+        }
+
+        for (p in platforms) {
+            val pr = RectF(player.x, player.y, player.x + player.width, player.y + player.height)
+            if (pr.right > p.left && pr.left < p.right && player.vy > 0f) {
+                if (pr.bottom > p.top && pr.top < p.top) {
+                    val prevBottom = player.prevY + player.height
+                    if (prevBottom <= p.top + 3f) {
+                        player.y = p.top - player.height
+                        player.vy = 0f
+                    }
+                }
+            }
+        }
+
+        for (mp in movingPlatforms) {
+            val mpr = mp.rect()
+            val pr = RectF(player.x, player.y, player.x + player.width, player.y + player.height)
+            if (pr.right > mpr.left && pr.left < mpr.right && player.vy > 0f) {
+                if (pr.bottom > mpr.top && pr.top < mpr.top) {
+                    val prevBottom = player.prevY + player.height
+                    if (prevBottom <= mpr.top + 3f) {
+                        player.y = mpr.top - player.height
+                        player.vy = 0f
+                        player.x += mp.speed * mp.direction * (1f / 60f)
+                    }
+                }
+            }
+        }
+
+        for (pipe in pipes) handleSolidCollision(player, pipe)
+        for (brick in bricks) handleSolidCollision(player, brick)
+
+        for (cp in checkpoints) {
+            if (!cp.activated && cp.tryActivate(player, 40f)) {
+                lastCheckpointX = cp.x + 60f
+                lastCheckpointY = groundTopY - player.height
+            }
+        }
+    }
+
+    override fun getSpikes(): List<Spike> = spikes
+    override fun getSaws(): List<Saw> = saws
 }
