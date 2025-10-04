@@ -24,6 +24,10 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
     private val shopManager = ShopManager(context)
     private val gameStateManager = GameStateManager(context)
 
+    // Sound and Settings
+    private val soundManager = SoundManager(context)
+    private val settingsOverlay = SettingsOverlay(context, soundManager)
+
     // camera (world coords)
     private var cameraX = 0f
     private var cameraY = 0f
@@ -39,10 +43,13 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
     private val btnJump = RectF()
     private val activePointers = HashMap<Int, String>()
 
-    // Game Over UI elements
+    // Game Over/Win UI elements
     private val yesButton = RectF()
     private val noButton = RectF()
+    private val settingsButton = RectF()
+    private val highScoresButton = RectF() // Add high scores button for win screen
     private var gameOverImage: Bitmap? = null
+    private var congratulationsImage: Bitmap? = null // Add congratulations image
 
     private var screenW = 1f
     private var screenH = 1f
@@ -52,6 +59,11 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
     private val btnTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE; textSize = 36f; textAlign = Paint.Align.CENTER
     }
+
+    // Game state tracking
+    private var monstersKilled = 0
+    private var coinsCollectedThisSession = 0
+    private var isGameWon = false
 
     init {
         AppCtx.ctx = context
@@ -65,6 +77,10 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         currentTileMap = tileMap // Bắt đầu với tilemap 1
         player = Player(context, 200f, 0f)
 
+        // Set up monster kill callbacks
+        tileMap.setMonsterKillCallback { onMonsterKilled() }
+        tileMap2.setMonsterKillCallback { onMonsterKilled() }
+
         // Always start fresh game session with full lives
         gameStateManager.initializeNewSession()
 
@@ -75,13 +91,25 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
     private fun loadGameOverImage() {
         try {
             @Suppress("DiscouragedApi")
-            val id = context.resources.getIdentifier("game_over", "drawable", context.packageName)
-            if (id != 0) {
-                gameOverImage = BitmapFactory.decodeResource(context.resources, id)
+            val gameOverId = context.resources.getIdentifier("game_over", "drawable", context.packageName)
+            if (gameOverId != 0) {
+                gameOverImage = BitmapFactory.decodeResource(context.resources, gameOverId)
             }
-        } catch (_: Exception) {
-            // Fallback if image doesn't exist
+
+            // Load congratulations image - try different resource locations
+            @Suppress("DiscouragedApi")
+            val congratsId = context.resources.getIdentifier("congratulations", "drawable", context.packageName)
+            if (congratsId != 0) {
+                congratulationsImage = BitmapFactory.decodeResource(context.resources, congratsId)
+                android.util.Log.d("GameView", "Congratulations image loaded successfully")
+            } else {
+                android.util.Log.e("GameView", "Failed to load congratulations image")
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("GameView", "Error loading images: ${e.message}")
+            // Fallback if images don't exist
             gameOverImage = null
+            congratulationsImage = null
         }
     }
 
@@ -91,6 +119,9 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         screenH = height.toFloat()
 
         recomputeLayout()
+        // Setup settings overlay layout
+        settingsOverlay.setupLayout(screenW, screenH)
+
         // place player on ground after we know player.height
         player.x = 200f
         player.y = tileMap.getGroundTopY() - player.height
@@ -98,6 +129,9 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         thread = GameThread(holder, this)
         thread.running = true
         thread.start()
+
+        // Start background music when game starts
+        soundManager.playBackgroundMusic()
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
@@ -122,17 +156,26 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         btnRight.set(btnLeft.right + margin * 0.6f, btnLeft.top, btnLeft.right + margin * 0.6f + btnSize, btnLeft.bottom)
         btnJump.set(screenW - margin - btnSize, screenH - margin - btnSize, screenW - margin, screenH - margin)
 
+        // Game Over/Win buttons layout - 3 buttons in a row
+        val gameOverBtnW = screenW * 0.18f  // Button width
+        val gameOverBtnH = screenH * 0.08f  // Button height
+        val gameOverBtnY = screenH * 0.75f  // Y position
+        val gameOverBtnSpacing = screenW * 0.06f  // Spacing between buttons
 
-        val gameOverBtnW = screenW * 0.2f
-        val gameOverBtnH = screenH * 0.08f
-        val gameOverBtnY = screenH * 0.75f
-        val gameOverBtnSpacing = screenW * 0.1f
-
-        val totalButtonsWidth = gameOverBtnW * 2 + gameOverBtnSpacing
+        val totalButtonsWidth = gameOverBtnW * 3 + gameOverBtnSpacing * 2
         val startX = (screenW - totalButtonsWidth) / 2f
 
+        // YES button (position 1)
         yesButton.set(startX, gameOverBtnY, startX + gameOverBtnW, gameOverBtnY + gameOverBtnH)
+
+        // NO button (position 2)
         noButton.set(startX + gameOverBtnW + gameOverBtnSpacing, gameOverBtnY, startX + gameOverBtnW + gameOverBtnSpacing + gameOverBtnW, gameOverBtnY + gameOverBtnH)
+
+        // SETTINGS button (position 3) - used for game over screen
+        settingsButton.set(startX + (gameOverBtnW + gameOverBtnSpacing) * 2, gameOverBtnY, startX + (gameOverBtnW + gameOverBtnSpacing) * 2 + gameOverBtnW, gameOverBtnY + gameOverBtnH)
+
+        // HIGH SCORES button (position 3) - same position as settings button, used for win screen
+        highScoresButton.set(startX + (gameOverBtnW + gameOverBtnSpacing) * 2, gameOverBtnY, startX + (gameOverBtnW + gameOverBtnSpacing) * 2 + gameOverBtnW, gameOverBtnY + gameOverBtnH)
 
         worldScale = screenH / tileMap.worldHeight
         worldScale = worldScale.coerceIn(0.5f, 2.0f)
@@ -208,7 +251,10 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
 
             checkForCheckpoints(tileMap2, 1)
 
-            if (tileMap2.isCompleted(player)) {}
+            // Check for victory condition - play victory sound when reaching final checkpoint of tilemap2
+            if (tileMap2.isCompleted(player)) {
+                soundManager.playVictorySound()
+            }
         } else {
             player.update(deltaMs, tileMap)
             tileMap.update(deltaMs)
@@ -325,12 +371,31 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
             else -> 1
         }
         shopManager.addCoins(coinValue)
+        coinsCollectedThisSession += coinValue // Track coins collected in this session
+        // Play coin sound when collecting coins
+        soundManager.playCoinSound()
+    }
+
+    // Add method to track monster kills
+    fun onMonsterKilled() {
+        monstersKilled++
+        android.util.Log.d("GameView", "Monster killed! Total: $monstersKilled")
     }
 
     private fun handlePlayerDeath() {
+        // Play death sound when player loses a life
+        soundManager.playDeathSound()
+
         gameStateManager.loseLife()
 
         if (gameStateManager.isGameOver()) {
+            // Save score when game over (before any reset)
+            android.util.Log.d("GameView", "Game Over - Saving score: coins=$coinsCollectedThisSession, monsters=$monstersKilled")
+            val scoreManager = ScoreManager(context)
+            scoreManager.saveScore(coinsCollectedThisSession, monstersKilled)
+
+            // Play game over sound when all lives are lost
+            soundManager.playGameOverSound()
         } else {
             respawnAtCheckpoint()
         }
@@ -404,10 +469,17 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         PotionEffects.drawSpeedEffect(canvas, player, paint)
         PotionEffects.drawShieldEffect(canvas, player, paint, gameStateManager)
 
-
         canvas.restore()
 
-        if (!gameStateManager.isGameOver()) {
+        // Show win screen first (highest priority)
+        if (isGameWon) {
+            android.util.Log.d("GameView", "Drawing win screen - isGameWon: $isGameWon")
+            drawWinScreen(canvas)
+        } else if (gameStateManager.isGameOver()) {
+            android.util.Log.d("GameView", "Drawing game over screen")
+            drawGameOverScreen(canvas)
+        } else {
+            // Normal gameplay UI
             drawControlButtonVisible(canvas, btnLeft, "◀", activePointers.containsValue("left"))
             drawControlButtonVisible(canvas, btnRight, "▶", activePointers.containsValue("right"))
             drawControlButtonVisible(canvas, btnJump, "▲", activePointers.containsValue("jump"))
@@ -415,14 +487,16 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
             drawHudWithIcons(canvas)
         }
 
-        if (gameStateManager.isGameOver()) {
-            drawGameOverScreen(canvas)
-        }
+        // Draw settings overlay on top of everything (always last)
+        settingsOverlay.draw(canvas)
     }
 
     private fun drawHudWithIcons(canvas: Canvas) {
         val hudMargin = 30f
         val iconSize = 45f
+
+        // Draw settings overlay on top of everything (always last)
+        settingsOverlay.draw(canvas)
         val spacing = 10f
 
         val lives = gameStateManager.getLives()
@@ -629,33 +703,41 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         val checkpointPositions = if (mapId == 0) {
             listOf(1000f, 2000f, 3000f, 4000f, 5000f)
         } else {
-            listOf(1000f, 2000f, 3000f)
+            // For map 2, include all checkpoint positions including final one at 7700f
+            listOf(950f, 2150f, 3480f, 4800f, 6250f, 7700f)
         }
 
         for (checkpointX in checkpointPositions) {
             if (player.x >= checkpointX - 50f && player.x <= checkpointX + 50f) {
                 val groundY = map.getGroundTopY() - player.height
+                val currentCheckpoint = gameStateManager.getCheckpoint()
+
+                // Only play sound if this is a new checkpoint
+                if (currentCheckpoint.first != checkpointX || currentCheckpoint.third != mapId) {
+                    soundManager.playCheckpointSound()
+                }
+
                 gameStateManager.setCheckpoint(checkpointX, groundY, mapId)
+
+                // Check if this is the final checkpoint of map 2 (victory condition)
+                if (mapId == 1 && checkpointX == 7700f) {
+                    handleVictory()
+                }
                 break
             }
         }
     }
 
-    private fun drawControlButtonVisible(canvas: Canvas, rect: RectF, text: String, pressed: Boolean) {
-        // Button background
-        btnPaint.color = if (pressed) Color.argb(180, 100, 100, 100) else Color.argb(120, 80, 80, 80)
-        canvas.drawRoundRect(rect, 20f, 20f, btnPaint)
+    private fun handleVictory() {
+        if (!isGameWon) {
+            isGameWon = true
+            soundManager.playVictorySound()
 
-        // Button border
-        btnPaint.style = Paint.Style.STROKE
-        btnPaint.strokeWidth = 3f
-        btnPaint.color = Color.WHITE
-        canvas.drawRoundRect(rect, 20f, 20f, btnPaint)
-        btnPaint.style = Paint.Style.FILL
-
-        // Button text
-        btnTextPaint.color = if (pressed) Color.YELLOW else Color.WHITE
-        canvas.drawText(text, rect.centerX(), rect.centerY() + 10f, btnTextPaint)
+            // Save the current session score
+            android.util.Log.d("GameView", "Victory - Saving score: coins=$coinsCollectedThisSession, monsters=$monstersKilled")
+            val scoreManager = ScoreManager(context)
+            scoreManager.saveScore(coinsCollectedThisSession, monstersKilled)
+        }
     }
 
     private fun drawGameOverScreen(canvas: Canvas) {
@@ -740,6 +822,151 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         }
         val noTextY = noButton.centerY() - (noTextPaint.descent() + noTextPaint.ascent()) / 2f
         canvas.drawText("NO", noButton.centerX(), noTextY, noTextPaint)
+
+        // SETTINGS button
+        val settingsPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(0, 0, 180) // Blue
+        }
+        canvas.drawRoundRect(settingsButton, 15f, 15f, settingsPaint)
+
+        // SETTINGS text
+        val settingsTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = 40f
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            setShadowLayer(2f, 1f, 1f, Color.BLACK)
+        }
+        val settingsTextY = settingsButton.centerY() - (settingsTextPaint.descent() + settingsTextPaint.ascent()) / 2f
+        canvas.drawText("SETTINGS", settingsButton.centerX(), settingsTextY, settingsTextPaint)
+
+        // HIGH SCORES button (for win screen)
+        val highScoresPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(0, 255, 0) // Bright Green
+        }
+        canvas.drawRoundRect(highScoresButton, 15f, 15f, highScoresPaint)
+
+        // HIGH SCORES text
+        val highScoresTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = 40f
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            setShadowLayer(2f, 1f, 1f, Color.BLACK)
+        }
+        val highScoresTextY = highScoresButton.centerY() - (highScoresTextPaint.descent() + highScoresTextPaint.ascent()) / 2f
+        canvas.drawText("HIGH SCORES", highScoresButton.centerX(), highScoresTextY, highScoresTextPaint)
+    }
+
+    private fun drawWinScreen(canvas: Canvas) {
+        // Semi-transparent overlay
+        val overlayPaint = Paint().apply {
+            color = Color.argb(200, 0, 0, 0)
+        }
+        canvas.drawRect(0f, 0f, screenW, screenH, overlayPaint)
+
+        // Draw congratulations image centered on screen
+        congratulationsImage?.let { image ->
+            val imageW = screenW * 0.5f  // Slightly smaller for better proportions
+            val imageH = imageW * (image.height.toFloat() / image.width.toFloat())
+            val imageX = (screenW - imageW) / 2f  // Centered horizontally
+            val imageY = (screenH - imageH) / 2f - screenH * 0.1f  // Centered vertically with slight upward offset
+
+            val imageRect = RectF(imageX, imageY, imageX + imageW, imageY + imageH)
+            canvas.drawBitmap(image, null, imageRect, paint)
+
+            // "Victory!" text positioned above the image
+            val victoryPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.YELLOW
+                textSize = 60f
+                textAlign = Paint.Align.CENTER
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                setShadowLayer(4f, 2f, 2f, Color.BLACK)
+            }
+            canvas.drawText("VICTORY!", screenW / 2f, imageY - 50f, victoryPaint)
+
+            // "Play Again?" text positioned below the image
+            val questionPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.WHITE
+                textSize = 45f
+                textAlign = Paint.Align.CENTER
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                setShadowLayer(3f, 2f, 2f, Color.BLACK)
+            }
+            canvas.drawText("Play Again?", screenW / 2f, imageY + imageH + 10f, questionPaint)
+
+        } ?: run {
+            // Fallback text if image doesn't exist - centered
+            val victoryPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.GREEN
+                textSize = 80f
+                textAlign = Paint.Align.CENTER
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                setShadowLayer(5f, 3f, 3f, Color.BLACK)
+            }
+            canvas.drawText("YOU WIN!", screenW / 2f, screenH / 2f - 30f, victoryPaint)
+
+            // "Play Again?" text
+            val questionPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.WHITE
+                textSize = 50f
+                textAlign = Paint.Align.CENTER
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+                setShadowLayer(3f, 2f, 2f, Color.BLACK)
+            }
+            canvas.drawText("Play Again?", screenW / 2f, screenH / 2f + 40f, questionPaint)
+        }
+
+        // YES button (position 1)
+        val yesPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(0, 180, 0) // Green
+        }
+        canvas.drawRoundRect(yesButton, 15f, 15f, yesPaint)
+
+        // YES text
+        val yesTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = 40f
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            setShadowLayer(2f, 1f, 1f, Color.BLACK)
+        }
+        val yesTextY = yesButton.centerY() - (yesTextPaint.descent() + yesTextPaint.ascent()) / 2f
+        canvas.drawText("YES", yesButton.centerX(), yesTextY, yesTextPaint)
+
+        // NO button (position 2)
+        val noPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(180, 0, 0) // Red
+        }
+        canvas.drawRoundRect(noButton, 15f, 15f, noPaint)
+
+        // NO text
+        val noTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = 40f
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            setShadowLayer(2f, 1f, 1f, Color.BLACK)
+        }
+        val noTextY = noButton.centerY() - (noTextPaint.descent() + noTextPaint.ascent()) / 2f
+        canvas.drawText("NO", noButton.centerX(), noTextY, noTextPaint)
+
+        // HIGH SCORES button (position 3) - ONLY show this button, not settings button
+        val highScoresPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.rgb(0, 255, 0) // Bright Green
+        }
+        canvas.drawRoundRect(highScoresButton, 15f, 15f, highScoresPaint)
+
+        // HIGH SCORES text
+        val highScoresTextPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.WHITE
+            textSize = 32f // Slightly smaller font to fit "HIGH SCORES"
+            textAlign = Paint.Align.CENTER
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            setShadowLayer(2f, 1f, 1f, Color.BLACK)
+        }
+        val highScoresTextY = highScoresButton.centerY() - (highScoresTextPaint.descent() + highScoresTextPaint.ascent()) / 2f
+        canvas.drawText("HIGH SCORES", highScoresButton.centerX(), highScoresTextY, highScoresTextPaint)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -750,86 +977,127 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
                 val x = event.getX(pointerIndex)
                 val y = event.getY(pointerIndex)
 
-                if (gameStateManager.isGameOver()) {
-                    // Handle game over screen touches
+                // First check settings overlay touch events (highest priority)
+                if (settingsOverlay.onTouchDown(x, y)) {
+                    // Handle specific settings overlay actions
+                    if (settingsOverlay.wasPreviousClicked(x, y)) {
+                        goToMenu()
+                    } else if (settingsOverlay.wasRestartClicked(x, y)) {
+                        startNewGame()
+                        settingsOverlay.hide()
+                    }
+                    return true
+                }
+
+                if (gameStateManager.isGameOver() || isGameWon) {
+                    // Handle game over/win screen touches
                     if (yesButton.contains(x, y)) {
+                        // Reset game state when starting new game
+                        isGameWon = false
+                        monstersKilled = 0
+                        coinsCollectedThisSession = 0
                         startNewGame()
                         return true
                     } else if (noButton.contains(x, y)) {
                         goToMenu()
                         return true
+                    } else if (isGameWon && highScoresButton.contains(x, y)) {
+                        // Handle high scores button (only shown on win screen) - CHECK THIS FIRST!
+                        handleHighScores()
+                        return true
+                    } else if (!isGameWon && settingsButton.contains(x, y)) {
+                        // Show settings overlay (only on game over screen, not win screen)
+                        settingsOverlay.show()
+                        return true
                     }
                 } else {
-                    // Handle game control touches
-                    when {
-                        btnLeft.contains(x, y) -> activePointers[pointerId] = "left"
-                        btnRight.contains(x, y) -> activePointers[pointerId] = "right"
-                        btnJump.contains(x, y) -> {
-                            activePointers[pointerId] = "jump"
-                            player.jump()
-                        }
-                        else -> {
-                            // Check inventory item touches for using potions
-                            val itemSize = 80f
-                            val spacing = 15f
-                            val startX = screenW - itemSize - 30f
-                            val startY = 120f
-                            var currentY = startY
-
-                            // Check health potion
-                            if (shopManager.getHealthPotions() > 0) {
-                                val itemRect = RectF(startX, currentY, startX + itemSize, currentY + itemSize)
-                                if (itemRect.contains(x, y)) {
-                                    useHealthPotion()
-                                    return true
-                                }
-                                currentY += itemSize + spacing
+                    // Handle game control touches (only if settings is not visible)
+                    if (!settingsOverlay.isVisible()) {
+                        when {
+                            btnLeft.contains(x, y) -> activePointers[pointerId] = "left"
+                            btnRight.contains(x, y) -> activePointers[pointerId] = "right"
+                            btnJump.contains(x, y) -> {
+                                activePointers[pointerId] = "jump"
+                                player.jump()
                             }
+                            else -> {
+                                // Check inventory item touches for using potions
+                                val itemSize = 80f
+                                val spacing = 15f
+                                val startX = screenW - itemSize - 30f
+                                val startY = 120f
+                                var currentY = startY
 
-                            // Check jump potion
-                            if (shopManager.getJumpPotions() > 0) {
-                                val itemRect = RectF(startX, currentY, startX + itemSize, currentY + itemSize)
-                                if (itemRect.contains(x, y)) {
-                                    useJumpPotion()
-                                    return true
+                                // Check health potion
+                                if (shopManager.getHealthPotions() > 0) {
+                                    val itemRect = RectF(startX, currentY, startX + itemSize, currentY + itemSize)
+                                    if (itemRect.contains(x, y)) {
+                                        useHealthPotion()
+                                        return true
+                                    }
+                                    currentY += itemSize + spacing
                                 }
-                                currentY += itemSize + spacing
-                            }
 
-                            // Check speed potion
-                            if (shopManager.getSpeedPotions() > 0) {
-                                val itemRect = RectF(startX, currentY, startX + itemSize, currentY + itemSize)
-                                if (itemRect.contains(x, y)) {
-                                    useSpeedPotion()
-                                    return true
+                                // Check jump potion
+                                if (shopManager.getJumpPotions() > 0) {
+                                    val itemRect = RectF(startX, currentY, startX + itemSize, currentY + itemSize)
+                                    if (itemRect.contains(x, y)) {
+                                        useJumpPotion()
+                                        return true
+                                    }
+                                    currentY += itemSize + spacing
                                 }
-                                currentY += itemSize + spacing
-                            }
 
-                            // Check shield potion
-                            if (shopManager.getShieldPotions() > 0) {
-                                val itemRect = RectF(startX, currentY, startX + itemSize, currentY + itemSize)
-                                if (itemRect.contains(x, y)) {
-                                    useShieldPotion()
-                                    return true
+                                // Check speed potion
+                                if (shopManager.getSpeedPotions() > 0) {
+                                    val itemRect = RectF(startX, currentY, startX + itemSize, currentY + itemSize)
+                                    if (itemRect.contains(x, y)) {
+                                        useSpeedPotion()
+                                        return true
+                                    }
+                                    currentY += itemSize + spacing
                                 }
-                                currentY += itemSize + spacing
-                            }
 
-                            if (shopManager.getMagnetPotions() > 0) {
-                                val itemRect = RectF(startX, currentY, startX + itemSize, currentY + itemSize)
-                                if (itemRect.contains(x, y)) {
-                                    useMagnetPotion()
-                                    return true
+                                // Check shield potion
+                                if (shopManager.getShieldPotions() > 0) {
+                                    val itemRect = RectF(startX, currentY, startX + itemSize, currentY + itemSize)
+                                    if (itemRect.contains(x, y)) {
+                                        useShieldPotion()
+                                        return true
+                                    }
+                                    currentY += itemSize + spacing
+                                }
+
+                                if (shopManager.getMagnetPotions() > 0) {
+                                    val itemRect = RectF(startX, currentY, startX + itemSize, currentY + itemSize)
+                                    if (itemRect.contains(x, y)) {
+                                        useMagnetPotion()
+                                        return true
+                                    }
                                 }
                             }
                         }
                     }
                 }
             }
+            MotionEvent.ACTION_MOVE -> {
+                val pointerIndex = event.actionIndex
+                val x = event.getX(pointerIndex)
+                val y = event.getY(pointerIndex)
+
+                // Handle settings overlay drag events
+                if (settingsOverlay.onTouchMove(x, y)) {
+                    return true
+                }
+            }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> {
                 val pointerIndex = event.actionIndex
                 val pointerId = event.getPointerId(pointerIndex)
+
+                // Handle settings overlay touch up
+                settingsOverlay.onTouchUp()
+
+                // Remove pointer from active list
                 activePointers.remove(pointerId)
             }
         }
@@ -890,5 +1158,29 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
                 // Thread interrupted during join
             }
         }
+    }
+
+    private fun handleHighScores() {
+        // Navigate to high scores screen (implement this activity and its layout)
+        val intent = Intent(context, HighScoresActivity::class.java)
+        intent.flags = Intent.FLAG_ACTIVITY_NEW_TASK
+        context.startActivity(intent)
+    }
+
+    private fun drawControlButtonVisible(canvas: Canvas, rect: RectF, text: String, pressed: Boolean) {
+        // Button background
+        btnPaint.color = if (pressed) Color.argb(180, 100, 100, 100) else Color.argb(120, 80, 80, 80)
+        canvas.drawRoundRect(rect, 20f, 20f, btnPaint)
+
+        // Button border
+        btnPaint.style = Paint.Style.STROKE
+        btnPaint.strokeWidth = 3f
+        btnPaint.color = Color.WHITE
+        canvas.drawRoundRect(rect, 20f, 20f, btnPaint)
+        btnPaint.style = Paint.Style.FILL
+
+        // Button text
+        btnTextPaint.color = if (pressed) Color.YELLOW else Color.WHITE
+        canvas.drawText(text, rect.centerX(), rect.centerY() + 10f, btnTextPaint)
     }
 }

@@ -24,6 +24,9 @@ class MenuView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
     // optional background
     private var bgBitmap: Bitmap? = null
 
+    // Sound Manager
+    private val soundManager = SoundManager(context)
+
     init {
         holder.addCallback(this)
         isFocusable = true
@@ -80,6 +83,9 @@ class MenuView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         // start thread
         thread.running = true
         if (!thread.isAlive) thread.start()
+
+        // Start playing menu music
+        soundManager.playMenuMusic()
     }
 
     override fun surfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {}
@@ -94,6 +100,8 @@ class MenuView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
                 // Thread interrupted
             }
         }
+        // Stop menu music when leaving menu
+        soundManager.stopMenuMusic()
     }
 
     fun update(@Suppress("UNUSED_PARAMETER") deltaMs: Long) { /* no animation now */ }
@@ -286,6 +294,8 @@ class MenuView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         } catch (_: InterruptedException) {
             // Thread interrupted
         }
+        // Pause menu music when activity pauses
+        soundManager.pauseAll()
     }
 
     fun resume() {
@@ -294,5 +304,7 @@ class MenuView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
             t.running = true
             t.start()
         }
+        // Play menu music when activity resumes
+        soundManager.playMenuMusic()
     }
 }

@@ -38,7 +38,19 @@
             android:screenOrientation="landscape"
             android:configChanges="orientation|screenSize|keyboardHidden" />
 
+        <!-- Victory Activity -->
+        <activity
+            android:name="com.example.game2d.VictoryActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
 
+        <!-- High Scores Activity -->
+        <activity
+            android:name="com.example.game2d.HighScoresActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:configChanges="orientation|screenSize|keyboardHidden" />
          </application>
 
 </manifest>

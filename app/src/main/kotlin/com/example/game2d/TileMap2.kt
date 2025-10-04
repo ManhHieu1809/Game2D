@@ -501,6 +501,8 @@ class TileMap2(ctx: Context) : TileMapInterface {
     }
 
     override fun updateMonsters(deltaMs: Long, player: Player) {
+        val monstersBeforeUpdate = monsters.size
+
         for (m in monsters) {
             when (m) {
                 is Monster1 -> m.update(deltaMs, player)
@@ -513,8 +515,29 @@ class TileMap2(ctx: Context) : TileMapInterface {
                 }
             }
         }
+
+        // Count killed monsters before removing them
+        val deadMonsters = monsters.count {
+            (it is Monster1 && !it.isAlive()) || (it is Monster2 && !it.isAlive())
+        }
+
+        // Remove dead monsters
         monsters.removeAll { it is Monster1 && !it.isAlive() }
         monsters.removeAll { it is Monster2 && !it.isAlive() }
+
+        // Notify about monster kills through callback
+        if (deadMonsters > 0 && this::onMonsterKilled.isInitialized) {
+            repeat(deadMonsters) {
+                onMonsterKilled()
+            }
+        }
+    }
+
+    // Add callback for monster kills
+    private lateinit var onMonsterKilled: () -> Unit
+
+    fun setMonsterKillCallback(callback: () -> Unit) {
+        onMonsterKilled = callback
     }
 
     override fun checkBulletHitAndRespawnIfNeeded(player: Player): Boolean {
@@ -637,6 +660,10 @@ class TileMap2(ctx: Context) : TileMapInterface {
                 if (!m.isAlive()) { it.remove(); continue }
                 if (m.tryStompBy(player)) {
                     it.remove()
+                    // Call the monster kill callback when stomped
+                    if (this::onMonsterKilled.isInitialized) {
+                        onMonsterKilled()
+                    }
                     player.y = m.y - player.height - 1f
                     player.vy = -280f
                     continue
@@ -648,6 +675,10 @@ class TileMap2(ctx: Context) : TileMapInterface {
                 if (!m.isAlive()) { it.remove(); continue }
                 if (m.tryStompBy(player)) {
                     it.remove()
+                    // Call the monster kill callback when stomped
+                    if (this::onMonsterKilled.isInitialized) {
+                        onMonsterKilled()
+                    }
                     player.y = m.y - player.height - 1f
                     player.vy = -280f
                     continue
