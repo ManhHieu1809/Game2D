@@ -1,37 +1,211 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:background="#2c3e50"
-    android:padding="16dp">
+    android:background="@drawable/high_scores_background"
+    android:padding="12dp">
 
-    <TextView
-        android:id="@+id/titleText"
+    <!-- Header Section - Compact -->
+    <RelativeLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="HIGH SCORES"
-        android:textSize="32sp"
-        android:textColor="#ffffff"
-        android:textStyle="bold"
-        android:gravity="center"
-        android:layout_marginBottom="24dp" />
+        android:layout_marginBottom="16dp">
 
+        <!-- Title with Trophy Icon - Smaller -->
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_centerInParent="true"
+            android:orientation="horizontal"
+            android:gravity="center">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🏆"
+                android:textSize="24dp"
+                android:layout_marginEnd="6dp" />
+
+            <TextView
+                android:id="@+id/titleText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="HIGH SCORES"
+                android:textSize="26sp"
+                android:textStyle="bold"
+                android:textColor="@color/gold"
+                android:fontFamily="serif"
+                android:shadowColor="#000000"
+                android:shadowDx="2"
+                android:shadowDy="2"
+                android:shadowRadius="4" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🏆"
+                android:textSize="24dp"
+                android:layout_marginStart="6dp" />
+
+        </LinearLayout>
+
+        <!-- Back Button - Smaller -->
+        <Button
+            android:id="@+id/backButton"
+            android:layout_width="40dp"
+            android:layout_height="40dp"
+            android:layout_alignParentStart="true"
+            android:layout_centerVertical="true"
+            android:background="@drawable/back_button_background"
+            android:text="←"
+            android:textSize="20sp"
+            android:textColor="@android:color/white"
+            android:textStyle="bold" />
+
+    </RelativeLayout>
+
+    <!-- Podium Section for Top 3 - Much Smaller -->
+    <LinearLayout
+        android:id="@+id/podiumSection"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="12dp"
+        android:gravity="center"
+        android:background="@drawable/podium_background"
+        android:padding="8dp">
+
+        <!-- 2nd Place - Compact -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:padding="4dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🥈"
+                android:textSize="20dp" />
+
+            <TextView
+                android:id="@+id/secondPlaceScore"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="---"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textColor="#C0C0C0"
+                android:gravity="center"
+                android:maxLines="2" />
+
+        </LinearLayout>
+
+        <!-- 1st Place (Elevated but smaller) -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:padding="4dp"
+            android:layout_marginTop="-8dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="👑"
+                android:textSize="24dp" />
+
+            <TextView
+                android:id="@+id/firstPlaceScore"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="---"
+                android:textSize="14sp"
+                android:textStyle="bold"
+                android:textColor="@color/gold"
+                android:gravity="center"
+                android:maxLines="2" />
+
+        </LinearLayout>
+
+        <!-- 3rd Place - Compact -->
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:padding="4dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="🥉"
+                android:textSize="20dp" />
+
+            <TextView
+                android:id="@+id/thirdPlaceScore"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="---"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                android:textColor="#CD7F32"
+                android:gravity="center"
+                android:maxLines="2" />
+
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- Scores List - More Space -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/scoresRecyclerView"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
-        android:layout_marginBottom="16dp" />
+        android:scrollbars="vertical"
+        android:clipToPadding="false"
+        android:paddingTop="4dp"
+        android:paddingBottom="4dp" />
 
-    <Button
-        android:id="@+id/backButton"
+    <!-- Footer - Compact -->
+    <LinearLayout
         android:layout_width="match_parent"
-        android:layout_height="60dp"
-        android:text="BACK"
-        android:textSize="18sp"
-        android:textColor="#ffffff"
-        android:background="#e74c3c"
-        android:layout_marginTop="16dp" />
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center"
+        android:layout_marginTop="8dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="⭐"
+            android:textSize="16dp"
+            android:layout_marginEnd="6dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Keep Playing to Beat Your Best!"
+            android:textSize="14sp"
+            android:textColor="@android:color/white"
+            android:textStyle="italic"
+            android:gravity="center" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="⭐"
+            android:textSize="16dp"
+            android:layout_marginStart="6dp" />
+
+    </LinearLayout>
 
 </LinearLayout>

@@ -23,4 +23,17 @@ interface TileMapInterface {
     fun getSaws(): List<com.example.game2d.obstacles.Saw>
 
     fun getLastCheckpoint(): Triple<Float, Float, Int>
+
+    // Methods for Monster1 collision detection
+    fun getTileSize(): Float = 32f  // Default tile size
+    fun isTileSolid(col: Int, row: Int): Boolean = false  // Default implementation
+    fun getTileRect(col: Int, row: Int): android.graphics.RectF {
+        val tileSize = getTileSize()
+        return android.graphics.RectF(
+            col * tileSize,
+            row * tileSize,
+            (col + 1) * tileSize,
+            (row + 1) * tileSize
+        )
+    }
 }

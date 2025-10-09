@@ -28,13 +28,17 @@ class GameStateManager(context: Context) {
 
     // Lives management
     fun getLives(): Int {
-        return prefs.getInt(LIVES_KEY, MAX_LIVES)
+        val lives = prefs.getInt(LIVES_KEY, MAX_LIVES)
+        return lives
     }
 
     fun setLives(lives: Int) {
-        prefs.edit {
-            putInt(LIVES_KEY, lives.coerceIn(0, MAX_LIVES))
-        }
+        val targetLives = lives.coerceIn(0, MAX_LIVES)
+        val editor = prefs.edit()
+        editor.putInt(LIVES_KEY, targetLives)
+        val success = editor.commit()
+        // Verify the value was actually saved
+        val verifyLives = prefs.getInt(LIVES_KEY, -1)
     }
 
     fun loseLife(): Int {
@@ -42,7 +46,6 @@ class GameStateManager(context: Context) {
         val newLives = (currentLives - 1).coerceAtLeast(0)
         setLives(newLives)
 
-        // Start invulnerability period
         startInvulnerability()
 
         return newLives
@@ -118,7 +121,7 @@ class GameStateManager(context: Context) {
     }
 
     // Checkpoint management
-    fun setCheckpoint(x: Float, y: Float, mapId: Int = 0) {
+    fun setCheckpoint(x: Float, y: Float, mapId: Int) {
         prefs.edit {
             putFloat(CHECKPOINT_X_KEY, x)
             putFloat(CHECKPOINT_Y_KEY, y)
@@ -136,6 +139,8 @@ class GameStateManager(context: Context) {
         val x = prefs.getFloat(CHECKPOINT_X_KEY, DEFAULT_SPAWN_X)
         val y = prefs.getFloat(CHECKPOINT_Y_KEY, DEFAULT_SPAWN_Y)
         val mapId = prefs.getInt(CHECKPOINT_MAP_KEY, 0)
+
+        android.util.Log.d("GameStateManager", "getCheckpoint: x=$x, y=$y, mapId=$mapId")
         return Triple(x, y, mapId)
     }
 
@@ -156,10 +161,4 @@ class GameStateManager(context: Context) {
         shieldEndTime = 0L
     }
 
-    // Handle hazard collision (saw/spike) - only respawn, don't lose health/life
-    fun handleHazardCollision() {
-        // Start brief invulnerability to prevent multiple triggers
-        startInvulnerability()
-        // Don't lose health or life - player just respawns at checkpoint
-    }
 }

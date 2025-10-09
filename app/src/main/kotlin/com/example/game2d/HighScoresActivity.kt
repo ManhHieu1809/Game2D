@@ -16,30 +16,97 @@ class HighScoresActivity : AppCompatActivity() {
     private lateinit var titleText: TextView
     private lateinit var scoreManager: ScoreManager
 
+    // Podium elements
+    private lateinit var firstPlaceScore: TextView
+    private lateinit var secondPlaceScore: TextView
+    private lateinit var thirdPlaceScore: TextView
+    private lateinit var podiumSection: View
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_high_scores)
 
         scoreManager = ScoreManager(this)
 
+        initializeViews()
+        setupRecyclerView()
+        setupBackButton()
+        setupPodium()
+    }
+
+    private fun initializeViews() {
         titleText = findViewById(R.id.titleText)
         recyclerView = findViewById(R.id.scoresRecyclerView)
         backButton = findViewById(R.id.backButton)
+        podiumSection = findViewById(R.id.podiumSection)
 
-        setupRecyclerView()
-        setupBackButton()
+        // Podium score displays
+        firstPlaceScore = findViewById(R.id.firstPlaceScore)
+        secondPlaceScore = findViewById(R.id.secondPlaceScore)
+        thirdPlaceScore = findViewById(R.id.thirdPlaceScore)
     }
 
     private fun setupRecyclerView() {
         val scores = scoreManager.getTopScores()
         recyclerView.layoutManager = LinearLayoutManager(this)
         recyclerView.adapter = ScoresAdapter(scores)
+
+        // Add some spacing between items
+        val spacing = resources.getDimensionPixelSize(R.dimen.score_item_spacing)
+        recyclerView.addItemDecoration(SpacingItemDecoration(spacing))
     }
 
     private fun setupBackButton() {
         backButton.setOnClickListener {
             finish()
         }
+    }
+
+    private fun setupPodium() {
+        val scores = scoreManager.getTopScores()
+
+        if (scores.isEmpty()) {
+            podiumSection.visibility = View.GONE
+            return
+        }
+
+        // Display top 3 scores on podium
+        when (scores.size) {
+            0 -> {
+                podiumSection.visibility = View.GONE
+            }
+            1 -> {
+                firstPlaceScore.text = formatPodiumScore(scores[0])
+                secondPlaceScore.text = "---"
+                thirdPlaceScore.text = "---"
+            }
+            2 -> {
+                firstPlaceScore.text = formatPodiumScore(scores[0])
+                secondPlaceScore.text = formatPodiumScore(scores[1])
+                thirdPlaceScore.text = "---"
+            }
+            else -> {
+                firstPlaceScore.text = formatPodiumScore(scores[0])
+                secondPlaceScore.text = formatPodiumScore(scores[1])
+                thirdPlaceScore.text = formatPodiumScore(scores[2])
+            }
+        }
+    }
+
+    private fun formatPodiumScore(score: PlayerScore): String {
+        return "${score.totalScore}\n${score.coins}c ${score.monsters}m"
+    }
+}
+
+// Helper class for RecyclerView item spacing
+class SpacingItemDecoration(private val spacing: Int) : RecyclerView.ItemDecoration() {
+    override fun getItemOffsets(
+        outRect: android.graphics.Rect,
+        view: View,
+        parent: RecyclerView,
+        state: RecyclerView.State
+    ) {
+        outRect.bottom = spacing
     }
 }
 

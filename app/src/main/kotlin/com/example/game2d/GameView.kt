@@ -16,8 +16,10 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
 
     private val tileMap: TileMap
     private val tileMap2: TileMap2
+    private val tileMap3: TileMap3
     private var currentTileMap: TileMapInterface
     private var isOnTileMap2 = false
+    private var isOnTileMap3 = false
     private val player: Player
 
     // New game systems
@@ -41,6 +43,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
     private val btnLeft = RectF()
     private val btnRight = RectF()
     private val btnJump = RectF()
+    private val btnAttack = RectF() // New attack button for boss fight
     private val activePointers = HashMap<Int, String>()
 
     // Game Over/Win UI elements
@@ -74,12 +77,16 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         // now safe to construct TileMap and Player (they may load sprites)
         tileMap = TileMap(context)
         tileMap2 = TileMap2(context)
+        tileMap3 = TileMap3(context)
         currentTileMap = tileMap // Bắt đầu với tilemap 1
         player = Player(context, 200f, 0f)
 
         // Set up monster kill callbacks
         tileMap.setMonsterKillCallback { onMonsterKilled() }
         tileMap2.setMonsterKillCallback { onMonsterKilled() }
+
+        // Set up boss defeated callback
+        tileMap3.setBossDefeatedCallback { onBossDefeated() }
 
         // Always start fresh game session with full lives
         gameStateManager.initializeNewSession()
@@ -155,6 +162,9 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         btnLeft.set(margin, screenH - margin - btnSize, margin + btnSize, screenH - margin)
         btnRight.set(btnLeft.right + margin * 0.6f, btnLeft.top, btnLeft.right + margin * 0.6f + btnSize, btnLeft.bottom)
         btnJump.set(screenW - margin - btnSize, screenH - margin - btnSize, screenW - margin, screenH - margin)
+
+        // Attack button positioned next to jump button (for boss fight in map 3)
+        btnAttack.set(screenW - margin - btnSize * 2 - margin * 0.6f, screenH - margin - btnSize, screenW - margin - btnSize - margin * 0.6f, screenH - margin)
 
         // Game Over/Win buttons layout - 3 buttons in a row
         val gameOverBtnW = screenW * 0.18f  // Button width
@@ -251,9 +261,52 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
 
             checkForCheckpoints(tileMap2, 1)
 
-            // Check for victory condition - play victory sound when reaching final checkpoint of tilemap2
-            if (tileMap2.isCompleted(player)) {
-                soundManager.playVictorySound()
+            // Check for transition to map 3 when reaching end of map 2
+            if (player.x >= 7700f) {
+                switchToTileMap3()
+                // Save checkpoint at start of Map3
+                val entryX = 200f
+                val entryY = tileMap3.getGroundTopY() - player.height
+                gameStateManager.setCheckpoint(entryX, entryY, 2)
+                android.util.Log.d("GameView", "Switched to Map3 (Boss Fight), saved checkpoint: x=$entryX, y=$entryY, mapId=2")
+            }
+        } else if (isOnTileMap3) {
+            player.update(deltaMs, tileMap3)
+            tileMap3.update(deltaMs)
+            tileMap3.updateMonsters(deltaMs, player)
+
+            tileMap3.checkCoinCollection(player) { coinType ->
+                onCoinCollected(coinType)
+            }
+
+            tileMap3.checkHealthCollection(player) { healAmount ->
+                onHealthCollected(healAmount)
+            }
+
+            if (!gameStateManager.isInvulnerable()) {
+                tileMap3.resolvePlayerCollisionSafe(player)
+
+                // Check if boss hit player - boss attack should reduce hearts, not instant death
+                if (tileMap3.checkBulletHitAndRespawnIfNeeded(player)) {
+                    // Boss hit player - lose one heart and become invulnerable temporarily
+                    handleHazardCollision() // This will reduce 1 heart
+                }
+
+                // Check if player fell off map
+                if (player.y + player.height > tileMap3.worldHeight) {
+                    handlePlayerDeath() // Instant death for falling
+                }
+            } else {
+                tileMap3.resolvePlayerCollisionSafe(player)
+            }
+
+            checkForCheckpoints(tileMap3, 2)
+
+            // Check for victory condition - when boss is defeated, trigger win
+            if (tileMap3.isBossDefeated()) {
+                if (!isGameWon) {
+                    onBossDefeated()
+                }
             }
         } else {
             player.update(deltaMs, tileMap)
@@ -326,14 +379,16 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
 
             if (player.x >= 6000f) {
                 switchToTileMap2()
+                // Lưu checkpoint đầu Map2 ngay khi chuyển map
                 val entryX = 200f
                 val entryY = tileMap2.getGroundTopY() - player.height
                 gameStateManager.setCheckpoint(entryX, entryY, 1)
+                android.util.Log.d("GameView", "Switched to Map2, saved checkpoint: x=$entryX, y=$entryY, mapId=1")
             }
         }
 
-        val currentWorldWidth = if (isOnTileMap2) tileMap2.worldWidth else tileMap.worldWidth
-        val currentWorldHeight = if (isOnTileMap2) tileMap2.worldHeight else tileMap.worldHeight
+        val currentWorldWidth = if (isOnTileMap3) tileMap3.worldWidth else if (isOnTileMap2) tileMap2.worldWidth else tileMap.worldWidth
+        val currentWorldHeight = if (isOnTileMap3) tileMap3.worldHeight else if (isOnTileMap2) tileMap2.worldHeight else tileMap.worldHeight
 
         val viewportWorldW = screenW / worldScale
         val viewportWorldH = screenH / worldScale
@@ -353,6 +408,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
 
     private fun switchToTileMap2() {
         isOnTileMap2 = true
+        isOnTileMap3 = false
 
         player.x = 200f
         player.y = tileMap2.getGroundTopY() - player.height
@@ -361,6 +417,25 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
 
         cameraX = 0f
         cameraY = 0f
+
+        // Set checkpoint at start of map 2
+        gameStateManager.setCheckpoint(200f, tileMap2.getGroundTopY() - player.height, 1)
+    }
+
+    private fun switchToTileMap3() {
+        isOnTileMap3 = true
+        isOnTileMap2 = false
+
+        player.x = 200f
+        player.y = tileMap3.getGroundTopY() - player.height
+        player.vx = 0f
+        player.vy = 0f
+
+        cameraX = 0f
+        cameraY = 0f
+
+        // Set checkpoint at start of map 3 (boss arena)
+        gameStateManager.setCheckpoint(200f, tileMap3.getGroundTopY() - player.height, 2)
     }
 
     fun onCoinCollected(coinType: String) {
@@ -372,14 +447,25 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         }
         shopManager.addCoins(coinValue)
         coinsCollectedThisSession += coinValue // Track coins collected in this session
-        // Play coin sound when collecting coins
         soundManager.playCoinSound()
     }
 
     // Add method to track monster kills
     fun onMonsterKilled() {
         monstersKilled++
-        android.util.Log.d("GameView", "Monster killed! Total: $monstersKilled")
+    }
+
+    // Add method to track boss defeat
+    fun onBossDefeated() {
+        if (!isGameWon) {
+            isGameWon = true
+            soundManager.playVictorySound()
+
+            // Save the current session score
+            android.util.Log.d("GameView", "Boss defeated - Saving score: coins=$coinsCollectedThisSession, monsters=$monstersKilled")
+            val scoreManager = ScoreManager(context)
+            scoreManager.saveScore(coinsCollectedThisSession, monstersKilled)
+        }
     }
 
     private fun handlePlayerDeath() {
@@ -389,8 +475,6 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         gameStateManager.loseLife()
 
         if (gameStateManager.isGameOver()) {
-            // Save score when game over (before any reset)
-            android.util.Log.d("GameView", "Game Over - Saving score: coins=$coinsCollectedThisSession, monsters=$monstersKilled")
             val scoreManager = ScoreManager(context)
             scoreManager.saveScore(coinsCollectedThisSession, monstersKilled)
 
@@ -404,12 +488,14 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
     fun onHealthCollected(healAmount: Int) {
         val currentLives = gameStateManager.getLives()
         if (currentLives < GameStateManager.MAX_LIVES) {
-            gameStateManager.setLives((currentLives + healAmount).coerceAtMost(GameStateManager.MAX_LIVES))
+            val newLives = (currentLives + healAmount).coerceAtMost(GameStateManager.MAX_LIVES)
+            gameStateManager.setLives(newLives)
         }
     }
 
     private fun resetToStart() {
         isOnTileMap2 = false
+        isOnTileMap3 = false
         currentTileMap = tileMap
 
         player.x = GameStateManager.DEFAULT_SPAWN_X
@@ -422,11 +508,14 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
     }
 
     private fun startNewGame() {
-        gameStateManager.handleGameOver()
-
+        // Reset game state manager first - ensure lives are set to 3
+        gameStateManager.initializeNewSession()
+        gameStateManager.startInvulnerability()
+        // Reset maps
         tileMap.resetLevel()
         tileMap2.resetLevel()
-
+        tileMap3.resetLevel()
+        // Reset to start position
         resetToStart()
     }
 
@@ -449,7 +538,9 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         val camY = round(cameraY)
         canvas.translate(-camX, -camY)
 
-        if (isOnTileMap2) {
+        if (isOnTileMap3) {
+            tileMap3.draw(canvas)
+        } else if (isOnTileMap2) {
             tileMap2.draw(canvas)
         } else {
             tileMap.draw(canvas)
@@ -473,16 +564,19 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
 
         // Show win screen first (highest priority)
         if (isGameWon) {
-            android.util.Log.d("GameView", "Drawing win screen - isGameWon: $isGameWon")
             drawWinScreen(canvas)
         } else if (gameStateManager.isGameOver()) {
-            android.util.Log.d("GameView", "Drawing game over screen")
             drawGameOverScreen(canvas)
         } else {
             // Normal gameplay UI
             drawControlButtonVisible(canvas, btnLeft, "◀", activePointers.containsValue("left"))
             drawControlButtonVisible(canvas, btnRight, "▶", activePointers.containsValue("right"))
             drawControlButtonVisible(canvas, btnJump, "▲", activePointers.containsValue("jump"))
+
+            // Draw attack button only in tilemap 3 (boss fight)
+            if (isOnTileMap3) {
+                drawControlButtonVisible(canvas, btnAttack, "⚔", activePointers.containsValue("attack"))
+            }
 
             drawHudWithIcons(canvas)
         }
@@ -667,18 +761,33 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
     private fun respawnAtCheckpoint() {
         val (checkpointX, checkpointY, mapId) = gameStateManager.getCheckpoint()
 
-        if (mapId == 1) {
-            // Respawn in tilemap 2
-            isOnTileMap2 = true
-            currentTileMap = tileMap2
-            player.x = checkpointX
-            player.y = checkpointY
-        } else {
-            // Respawn in tilemap 1
+        android.util.Log.d("GameView", "=== RESPAWN DEBUG ===")
+        android.util.Log.d("GameView", "Checkpoint: x=$checkpointX, y=$checkpointY, mapId=$mapId")
+        android.util.Log.d("GameView", "Current map state: isOnTileMap2=$isOnTileMap2, isOnTileMap3=$isOnTileMap3")
+
+        if (mapId == 0) {
             isOnTileMap2 = false
+            isOnTileMap3 = false
             currentTileMap = tileMap
             player.x = checkpointX
             player.y = checkpointY
+            android.util.Log.d("GameView", "Respawning in MAP 1 at x=$checkpointX, y=$checkpointY")
+        } else if (mapId == 1) {
+            // Respawn in tilemap 2
+            isOnTileMap2 = true
+            isOnTileMap3 = false
+            currentTileMap = tileMap2
+            player.x = checkpointX
+            player.y = checkpointY
+            android.util.Log.d("GameView", "Respawning in MAP 2 at x=$checkpointX, y=$checkpointY")
+        } else {
+            // Respawn in tilemap 3 (boss fight)
+            isOnTileMap3 = true
+            isOnTileMap2 = false
+            currentTileMap = tileMap3
+            player.x = checkpointX
+            player.y = checkpointY
+            android.util.Log.d("GameView", "Respawning in MAP 3 at x=$checkpointX, y=$checkpointY")
         }
 
         // Reset player velocity to prevent falling/moving after respawn
@@ -690,21 +799,27 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
         cameraY = player.y - (screenH / worldScale) / 2f
 
         // Clamp camera bounds
-        val currentWorldWidth = if (isOnTileMap2) tileMap2.worldWidth else tileMap.worldWidth
-        val currentWorldHeight = if (isOnTileMap2) tileMap2.worldHeight else tileMap.worldHeight
+        val currentWorldWidth = if (isOnTileMap3) tileMap3.worldWidth else if (isOnTileMap2) tileMap2.worldWidth else tileMap.worldWidth
+        val currentWorldHeight = if (isOnTileMap3) tileMap3.worldHeight else if (isOnTileMap2) tileMap2.worldHeight else tileMap.worldHeight
         val viewportWorldW = screenW / worldScale
         val viewportWorldH = screenH / worldScale
 
-        cameraX = cameraX.coerceIn(0f, kotlin.math.max(0f, currentWorldWidth - viewportWorldW))
-        cameraY = cameraY.coerceIn(0f, kotlin.math.max(0f, currentWorldHeight - viewportWorldH))
+        cameraX = cameraX.coerceIn(0f, max(0f, currentWorldWidth - viewportWorldW))
+        cameraY = cameraY.coerceIn(0f, max(0f, currentWorldHeight - viewportWorldH))
+
+        android.util.Log.d("GameView", "Camera reset to: cameraX=$cameraX, cameraY=$cameraY")
+        android.util.Log.d("GameView", "===================")
     }
 
     private fun checkForCheckpoints(map: TileMapInterface, mapId: Int) {
         val checkpointPositions = if (mapId == 0) {
             listOf(1000f, 2000f, 3000f, 4000f, 5000f)
-        } else {
+        } else if (mapId == 1) {
             // For map 2, include all checkpoint positions including final one at 7700f
             listOf(950f, 2150f, 3480f, 4800f, 6250f, 7700f)
+        } else {
+            // For map 3, only checkpoint at start - no victory checkpoint, win only by defeating boss
+            listOf()
         }
 
         for (checkpointX in checkpointPositions) {
@@ -719,10 +834,7 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
 
                 gameStateManager.setCheckpoint(checkpointX, groundY, mapId)
 
-                // Check if this is the final checkpoint of map 2 (victory condition)
-                if (mapId == 1 && checkpointX == 7700f) {
-                    handleVictory()
-                }
+                // REMOVED: No victory condition here - only win by defeating boss in map 3
                 break
             }
         }
@@ -1020,6 +1132,17 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
                                 activePointers[pointerId] = "jump"
                                 player.jump()
                             }
+                            btnAttack.contains(x, y) -> {
+                                activePointers[pointerId] = "attack"
+                                // Attack boss if in map 3
+                                if (isOnTileMap3) {
+                                    val hit = tileMap3.playerAttackBoss(player)
+                                    if (hit) {
+                                        // Play attack sound or visual feedback
+                                        android.util.Log.d("GameView", "Player hit boss!")
+                                    }
+                                }
+                            }
                             else -> {
                                 // Check inventory item touches for using potions
                                 val itemSize = 80f
@@ -1106,11 +1229,20 @@ class GameView(context: Context) : SurfaceView(context), SurfaceHolder.Callback 
 
     // Potion usage methods
     private fun useHealthPotion() {
+        android.util.Log.d("GameView", "useHealthPotion: Called")
         if (shopManager.useHealthPotion()) {
+            android.util.Log.d("GameView", "useHealthPotion: Health potion used successfully")
             val currentLives = gameStateManager.getLives()
+            android.util.Log.d("GameView", "useHealthPotion: Current lives=$currentLives, MAX_LIVES=${GameStateManager.MAX_LIVES}")
             if (currentLives < GameStateManager.MAX_LIVES) {
-                gameStateManager.setLives(currentLives + 1)
+                val newLives = currentLives + 1
+                android.util.Log.d("GameView", "useHealthPotion: Setting lives to $newLives")
+                gameStateManager.setLives(newLives)
+            } else {
+                android.util.Log.d("GameView", "useHealthPotion: Lives already at max, not setting")
             }
+        } else {
+            android.util.Log.d("GameView", "useHealthPotion: No health potions available or failed to use")
         }
     }
 

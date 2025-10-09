@@ -2,82 +2,121 @@
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:orientation="horizontal"
-    android:background="#34495e"
-    android:padding="12dp"
-    android:layout_marginBottom="8dp"
-    android:elevation="2dp">
+    android:orientation="vertical"
+    android:layout_marginBottom="10dp">
 
-    <TextView
-        android:id="@+id/rankText"
-        android:layout_width="40dp"
+    <RelativeLayout
+        android:id="@+id/scoreBackground"
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="1"
-        android:textSize="20sp"
-        android:textColor="#f39c12"
-        android:textStyle="bold"
-        android:gravity="center" />
+        android:background="@drawable/score_item_background"
+        android:padding="20dp"
+        android:elevation="4dp">
 
-    <LinearLayout
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:orientation="vertical"
-        android:layout_marginStart="12dp">
-
+        <!-- Rank Circle - Bigger -->
         <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal">
+            android:id="@+id/rankContainer"
+            android:layout_width="70dp"
+            android:layout_height="70dp"
+            android:layout_alignParentStart="true"
+            android:layout_centerVertical="true"
+            android:orientation="vertical"
+            android:gravity="center"
+            android:background="@drawable/rank_circle_background">
 
             <TextView
-                android:id="@+id/coinsText"
-                android:layout_width="0dp"
+                android:id="@+id/rankText"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Coins: 150"
-                android:textSize="16sp"
-                android:textColor="#ffffff" />
-
-            <TextView
-                android:id="@+id/monstersText"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Monsters: 25"
-                android:textSize="16sp"
-                android:textColor="#ffffff" />
+                android:text="#1"
+                android:textSize="22sp"
+                android:textStyle="bold"
+                android:textColor="@android:color/white"
+                android:gravity="center" />
 
         </LinearLayout>
 
+        <!-- Score Details - Bigger Text -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginTop="4dp">
+            android:layout_toEndOf="@id/rankContainer"
+            android:layout_centerVertical="true"
+            android:layout_marginStart="20dp"
+            android:orientation="vertical">
 
-            <TextView
-                android:id="@+id/totalScoreText"
-                android:layout_width="0dp"
+            <!-- Total Score - Much Bigger -->
+            <LinearLayout
+                android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="Score: 400"
-                android:textSize="18sp"
-                android:textColor="#27ae60"
-                android:textStyle="bold" />
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="8dp">
 
+                <TextView
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="Total Score: "
+                    android:textSize="16sp"
+                    android:textColor="@android:color/white"
+                    android:alpha="0.8" />
+
+                <TextView
+                    android:id="@+id/totalScoreText"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:text="1000"
+                    android:textSize="28sp"
+                    android:textStyle="bold"
+                    android:textColor="@android:color/white"
+                    android:layout_marginStart="8dp" />
+
+            </LinearLayout>
+
+            <!-- Coins and Monsters Row - Bigger -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="horizontal"
+                android:gravity="center_vertical"
+                android:layout_marginBottom="6dp">
+
+                <TextView
+                    android:id="@+id/coinsText"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="🪙 100"
+                    android:textSize="20sp"
+                    android:textColor="@color/gold"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/monstersText"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:text="👹 50"
+                    android:textSize="20sp"
+                    android:textColor="#FF6B6B"
+                    android:textStyle="bold"
+                    android:gravity="end" />
+
+            </LinearLayout>
+
+            <!-- Date - Bigger -->
             <TextView
                 android:id="@+id/dateText"
-                android:layout_width="0dp"
+                android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="12/02/2024"
+                android:text="Dec 04, 2025"
                 android:textSize="14sp"
-                android:textColor="#bdc3c7"
-                android:gravity="end" />
+                android:textColor="@android:color/white"
+                android:alpha="0.7"
+                android:textStyle="italic" />
 
         </LinearLayout>
 
-    </LinearLayout>
+    </RelativeLayout>
 
 </LinearLayout>

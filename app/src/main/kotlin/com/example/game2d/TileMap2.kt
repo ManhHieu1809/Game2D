@@ -332,31 +332,31 @@ class TileMap2(ctx: Context) : TileMapInterface {
         // More challenging monster placement for tilemap 2
 
         // Area 1: Forest guards
-        monsters += Monster1(400f, groundTopY - 32f, patrolWidth = 100f, detectRange = 300f)
+        monsters += Monster1(400f, groundTopY - 32f, patrolWidth = 100f, detectRange = 300f, tileMap = this)
         monsters += Monster2(650f, groundTopY - 34f * 1.8f, patrolWidth = 120f, scaleOverride = 1.8f)
 
         // Area 2: Mountain climbers
-        monsters += Monster1(1200f, groundTopY - 32f, patrolWidth = 80f, detectRange = 250f)
+        monsters += Monster1(1200f, groundTopY - 32f, patrolWidth = 80f, detectRange = 250f, tileMap = this)
         monsters += Monster2(1500f, groundTopY - 34f * 1.8f, patrolWidth = 100f, scaleOverride = 1.8f)
-        monsters += Monster1(1800f, groundTopY - 32f, patrolWidth = 120f, detectRange = 350f)
+        monsters += Monster1(1800f, groundTopY - 32f, patrolWidth = 120f, detectRange = 350f, tileMap = this)
 
         // Area 3: Cave dwellers
         monsters += Monster2(2400f, groundTopY - 34f * 1.8f, patrolWidth = 150f, scaleOverride = 1.8f)
-        monsters += Monster1(2800f, groundTopY - 32f, patrolWidth = 100f, detectRange = 300f)
+        monsters += Monster1(2800f, groundTopY - 32f, patrolWidth = 100f, detectRange = 300f, tileMap = this)
         monsters += Monster2(3200f, groundTopY - 34f * 1.8f, patrolWidth = 140f, scaleOverride = 1.8f)
 
         // Area 4: Sky guardians
-        monsters += Monster1(3700f, groundTopY - 32f, patrolWidth = 120f, detectRange = 400f)
+        monsters += Monster1(3700f, groundTopY - 32f, patrolWidth = 120f, detectRange = 400f, tileMap = this)
         monsters += Monster2(4100f, groundTopY - 34f * 1.8f, patrolWidth = 100f, scaleOverride = 1.8f)
-        monsters += Monster1(4400f, groundTopY - 32f, patrolWidth = 150f, detectRange = 450f)
+        monsters += Monster1(4400f, groundTopY - 32f, patrolWidth = 150f, detectRange = 450f, tileMap = this)
 
         // Area 5: Castle guards - elite
         monsters += Monster2(5200f, groundTopY - 34f * 2.0f, patrolWidth = 80f, scaleOverride = 2.0f)
-        monsters += Monster1(5800f, groundTopY - 32f, patrolWidth = 100f, detectRange = 400f)
+        monsters += Monster1(5800f, groundTopY - 32f, patrolWidth = 100f, detectRange = 400f, tileMap = this)
         monsters += Monster2(6100f, groundTopY - 34f * 2.0f, patrolWidth = 120f, scaleOverride = 2.0f)
 
         // Area 6: Final guardian
-        monsters += Monster1(7200f, groundTopY - 32f, patrolWidth = 200f, detectRange = 500f)
+        monsters += Monster1(7200f, groundTopY - 32f, patrolWidth = 200f, detectRange = 500f, tileMap = this)
     }
 
     override fun getGroundTopY(): Float = groundTopY
@@ -600,12 +600,12 @@ class TileMap2(ctx: Context) : TileMapInterface {
         for (pipe in pipes) collided = handleSolidCollision(player, pipe) || collided
         for (brick in bricks) collided = handleSolidCollision(player, brick) || collided
 
-        for (sp in spikes) if (sp.isHit(player)) { respawnPlayer(player); return true }
-        for (sw in saws) if (sw.isHit(player)) { respawnPlayer(player); return true }
+        // Just return collision status, don't handle respawn directly
+        for (sp in spikes) if (sp.isHit(player)) { return true }
+        for (sw in saws) if (sw.isHit(player)) { return true }
 
         if (player.y + player.height > worldHeight) {
-            respawnPlayer(player)
-            collided = true
+            return true  // Just signal collision, don't respawn here
         }
 
         for (cp in checkpoints) {
@@ -766,7 +766,7 @@ class TileMap2(ctx: Context) : TileMapInterface {
     }
 
     override fun getLastCheckpoint(): Triple<Float, Float, Int> {
-        return Triple(lastCheckpointX, lastCheckpointY, 0)
+        return Triple(lastCheckpointX, lastCheckpointY, 1)
     }
 
     override fun resolvePlayerCollisionSafe(player: Player) {

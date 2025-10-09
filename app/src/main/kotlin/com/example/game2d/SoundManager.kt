@@ -70,7 +70,7 @@ class SoundManager(private val context: Context) {
                 setVolume(sfxVolume, sfxVolume)
             }
 
-            checkpointSound = MediaPlayer.create(context, R.raw.congratulation)?.apply {
+            checkpointSound = MediaPlayer.create(context, R.raw.music_checkpoint)?.apply {
                 setVolume(sfxVolume, sfxVolume)
             }
         } catch (e: Exception) {

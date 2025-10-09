@@ -136,7 +136,7 @@ object HudIcons {
 
     // Vẽ progress bar cho bất tử
     fun drawInvulnerabilityBar(canvas: Canvas, x: Float, y: Float, width: Float, height: Float,
-                              progress: Float, paint: Paint) {
+                               progress: Float, paint: Paint) {
         // Background
         paint.style = Paint.Style.FILL
         paint.color = Color.argb(100, 255, 255, 255)

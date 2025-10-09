@@ -12,7 +12,8 @@ class Monster1(
     startX: Float,
     startY: Float,
     patrolWidth: Float = 160f,
-    private val detectRange: Float = 420f
+    private val detectRange: Float = 420f,
+    private var tileMap: com.example.game2d.TileMapInterface? = null
 ) : Entity() {
 
     // resource names
@@ -52,13 +53,6 @@ class Monster1(
     private val displayW get() = FRAME_W * DISPLAY_SCALE
     private val displayH get() = FRAME_H * DISPLAY_SCALE
 
-    init {
-        // adjust y so feet align with original ground y (TileMap used startY = groundTopY - FRAME_H)
-        x = startX
-        y = startY - (displayH - FRAME_H)
-        vx = -42f
-    }
-
     private val patrolSpeed = 42f
     private val leftBound = startX - patrolWidth / 2f
     private val rightBound = startX + patrolWidth / 2f
@@ -85,7 +79,12 @@ class Monster1(
     private var deathDone = false
 
     init {
-        // load frames (loadStrip sẽ setHasAlpha + prepareToDraw cho từng frame)
+        // adjust y so feet align with original ground y
+        x = startX
+        y = startY - (displayH - FRAME_H)
+        vx = -42f
+
+        // load frames
         loadStrip(RES_IDLE, idleFrames, FRAME_W, FRAME_H, IDLE_FRAMES)
         loadStrip(RES_RUN, runFrames, FRAME_W, FRAME_H, RUN_FRAMES)
         loadStrip(RES_ATTACK, attackFrames, FRAME_W, FRAME_H, ATTACK_FRAMES)
@@ -109,6 +108,7 @@ class Monster1(
         var wantAttack = false
         var playerIsAbove = false
         var playerInDetect = false
+
         if (player != null) {
             val playerCenterX = player.x + player.width / 2f
             val playerCenterY = player.y + player.height / 2f
@@ -130,7 +130,6 @@ class Monster1(
         when (state) {
             State.DEAD -> {
                 vx = 0f
-                // advance death animation; stepAnim sẽ set alive=false khi animation kết thúc
                 stepAnim(dtMs, hitFrames, 80L)
             }
             State.ATTACK -> {
@@ -148,16 +147,59 @@ class Monster1(
                 }
             }
             else -> {
-                // PATROL when no attack intent
                 if (player == null || !wantAttack) {
+                    // PATROL mode
                     vx = if (facingLeft) -patrolSpeed else patrolSpeed
-                    x += vx * dt
-                    if (x < leftBound) { x = leftBound; facingLeft = false }
-                    if (x > rightBound) { x = rightBound; facingLeft = true }
+                    val newX = x + vx * dt
+
+                    // Check wall collision
+                    var canMove = true
+                    tileMap?.let { map ->
+                        val checkX = if (facingLeft) newX - 10f else newX + displayW + 10f
+                        val checkY = y + displayH - 10f
+
+                        if (checkX < 0f || checkX >= map.worldWidth) {
+                            canMove = false
+                        } else {
+                            try {
+                                val tileSize = map.getTileSize()
+                                val tileCol = (checkX / tileSize).toInt()
+                                val tileRow = (checkY / tileSize).toInt()
+
+                                if (tileCol >= 0 && tileRow >= 0 &&
+                                    tileCol < (map.worldWidth / tileSize).toInt() &&
+                                    tileRow < (map.worldHeight / tileSize).toInt()) {
+                                    if (map.isTileSolid(tileCol, tileRow)) {
+                                        canMove = false
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                canMove = true
+                            }
+                        }
+                    }
+
+                    if (canMove) {
+                        x = newX
+                        // Check patrol bounds
+                        if (x < leftBound) {
+                            x = leftBound
+                            facingLeft = false
+                        }
+                        if (x > rightBound) {
+                            x = rightBound
+                            facingLeft = true
+                        }
+                    } else {
+                        // Hit wall, turn around
+                        facingLeft = !facingLeft
+                        vx = 0f
+                    }
+
                     state = if (abs(vx) > 1f) State.RUN else State.IDLE
                     fireTimer = max(0, (fireTimer + dtMs).toInt()).toLong()
                 } else {
-                    // player in attack area: build cooldown then attack
+                    // Attack mode
                     fireTimer += dtMs
                     if (fireTimer >= 900L) {
                         state = State.ATTACK
@@ -166,7 +208,7 @@ class Monster1(
                     }
                 }
 
-                // step run/idle anim
+                // Animation
                 val frames = if (state == State.RUN) runFrames else idleFrames
                 val frameMs = if (state == State.RUN) 60L else 80L
                 animTimer += dtMs
@@ -178,29 +220,20 @@ class Monster1(
             }
         }
 
-        // bullets
-        val it = bullets.iterator()
-        while (it.hasNext()) {
-            val b = it.next()
-            b.update(dtMs)
-            if (!b.alive()) it.remove()
+        // Update bullets
+        bullets.removeAll { bullet ->
+            try {
+                bullet.update(dtMs)
+                !bullet.alive()
+            } catch (e: Exception) {
+                true
+            }
         }
     }
 
-    // thêm public getter để TileMap kiểm tra
     fun isAlive(): Boolean {
-        return try {
-            // nếu class có aliveFlag private tên khác, đổi tương ứng
-            val field = this.javaClass.getDeclaredField("aliveFlag")
-            field.isAccessible = true
-            val v = field.get(this)
-            if (v is Boolean) v else true
-        } catch (_: Exception) {
-            // an toàn: nếu không có field, giả sử còn sống
-            true
-        }
+        return alive && state != State.DEAD
     }
-
 
     override fun draw(canvas: Canvas) {
         if (!alive) return
@@ -229,7 +262,6 @@ class Monster1(
         bullets.forEach { it.draw(canvas) }
     }
 
-
     fun tryStompBy(player: Player): Boolean {
         if (state == State.DEAD || !alive) return false
         val playerBottomNow = player.y + player.height
@@ -237,7 +269,8 @@ class Monster1(
         val monsterTop = y
         val falling = player.vy > 0f
         val wasAbove = playerBottomPrev <= monsterTop + 4f
-        if (falling && wasAbove && playerBottomNow > monsterTop && player.x + player.width > x && player.x < x + displayW) {
+        if (falling && wasAbove && playerBottomNow > monsterTop &&
+            player.x + player.width > x && player.x < x + displayW) {
             state = State.DEAD
             animFrame = 0
             animTimer = 0
@@ -250,8 +283,12 @@ class Monster1(
     fun bulletHitPlayer(player: Player): Boolean {
         var hit = false
         bullets.forEach { b ->
-            if (!b.exploded && RectF.intersects(b.bounds(), RectF(player.x, player.y, player.x + player.width, player.y + player.height))) {
-                b.explode(); hit = true
+            if (!b.exploded && RectF.intersects(
+                b.bounds(),
+                RectF(player.x, player.y, player.x + player.width, player.y + player.height)
+            )) {
+                b.explode()
+                hit = true
             }
         }
         return hit
@@ -263,7 +300,6 @@ class Monster1(
         bullets += Bullet(sx, sy, facingLeft, BULLET_SPEED, BULLET_RANGE, bulletBmp, bulletHitFrames)
     }
 
-    // ===== stepAnim implementation (fixed, typed) =====
     private fun stepAnim(dtMs: Long, frames: List<Bitmap>, frameMs: Long, onIndex: ((Int) -> Unit)? = null) {
         if (frames.isEmpty()) {
             if (state == State.DEAD && !deathDone) {
@@ -285,8 +321,6 @@ class Monster1(
         }
     }
 
-    private fun frameFrom(frames: List<Bitmap>) = if (frames.isEmpty()) null else frames[min(animFrame, frames.size - 1)]
-
     // Bullet inner class
     private class Bullet(
         startX: Float, startY: Float,
@@ -297,10 +331,13 @@ class Monster1(
         private val hitFrames: List<Bitmap>
     ) {
         private val paint = Paint()
-        var x = startX; var y = startY
+        var x = startX
+        var y = startY
         private val startX0 = startX
-        var exploded = false; private var aliveInternal = true
-        private var f = 0; private var t = 0L
+        var exploded = false
+        private var aliveInternal = true
+        private var f = 0
+        private var t = 0L
 
         fun update(dtMs: Long) {
             if (!exploded) {
@@ -308,12 +345,17 @@ class Monster1(
                 if (abs(x - startX0) > maxRange) aliveInternal = false
             } else {
                 t += dtMs
-                if (t >= 70L) { t -= 70L; f++; if (f >= max(1, hitFrames.size)) aliveInternal = false }
+                if (t >= 70L) {
+                    t -= 70L
+                    f++
+                    if (f >= max(1, hitFrames.size)) aliveInternal = false
+                }
             }
         }
 
         fun draw(canvas: Canvas) {
-            paint.isFilterBitmap = false; paint.isDither = false
+            paint.isFilterBitmap = false
+            paint.isDither = false
             if (!exploded) {
                 if (sprite != null) {
                     canvas.drawBitmap(sprite, x, y, paint)
@@ -323,17 +365,27 @@ class Monster1(
                 }
             } else {
                 val bmp = if (hitFrames.isNotEmpty()) hitFrames[min(f, hitFrames.size - 1)] else null
-                if (bmp != null) canvas.drawBitmap(bmp, x - 8f, y - 8f, paint)
-                else { paint.color = Color.argb(160, 255, 220, 0); canvas.drawCircle(x, y, 10f, paint) }
+                if (bmp != null) {
+                    canvas.drawBitmap(bmp, x - 8f, y - 8f, paint)
+                } else {
+                    paint.color = Color.argb(160, 255, 220, 0)
+                    canvas.drawCircle(x, y, 10f, paint)
+                }
             }
         }
 
-        fun explode() { if (!exploded) { exploded = true } }
+        fun explode() {
+            if (!exploded) {
+                exploded = true
+            }
+        }
+
         fun alive() = aliveInternal
+
         fun bounds() = RectF(x, y, x + 16f, y + 16f)
     }
 
-    // image helpers
+    // Image loading helpers
     private fun loadSingle(name: String): Bitmap? {
         val bmp = loadBitmap(name) ?: return null
         return bmp.copy(Bitmap.Config.ARGB_8888, false)
@@ -341,8 +393,10 @@ class Monster1(
 
     private fun loadStrip(name: String, out: MutableList<Bitmap>, frameW: Int, frameH: Int, expectedFrames: Int = -1) {
         val sheet = loadBitmap(name) ?: return
-        val src = if (sheet.config != Bitmap.Config.ARGB_8888) sheet.copy(Bitmap.Config.ARGB_8888, false) else sheet
+        val src = if (sheet.config != Bitmap.Config.ARGB_8888)
+            sheet.copy(Bitmap.Config.ARGB_8888, false) else sheet
         val count = if (expectedFrames > 0) expectedFrames else (src.width / frameW)
+
         for (i in 0 until count) {
             val srcRect = Rect(i * frameW, 0, (i + 1) * frameW, frameH)
             val frame = Bitmap.createBitmap(frameW, frameH, Bitmap.Config.ARGB_8888)
@@ -350,7 +404,9 @@ class Monster1(
             val c = Canvas(frame)
             val p = Paint().apply { isFilterBitmap = false; isDither = false }
             c.drawBitmap(src, srcRect, Rect(0, 0, frameW, frameH), p)
-            try { frame.prepareToDraw() } catch (_: Throwable) {}
+            try {
+                frame.prepareToDraw()
+            } catch (_: Throwable) {}
             out.add(frame)
         }
     }
@@ -360,14 +416,25 @@ class Monster1(
             val res = AppCtx.res
             val pkg = AppCtx.pkg
             val id = res.getIdentifier(name, "drawable", pkg)
-            val opts = BitmapFactory.Options().apply { inScaled = false; inPreferredConfig = Bitmap.Config.ARGB_8888 }
-            if (id != 0) return BitmapFactory.decodeResource(res, id, opts)?.copy(Bitmap.Config.ARGB_8888, false)
+            val opts = BitmapFactory.Options().apply {
+                inScaled = false
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            if (id != 0) {
+                return BitmapFactory.decodeResource(res, id, opts)?.copy(Bitmap.Config.ARGB_8888, false)
+            }
         } catch (_: Exception) {}
+
         return try {
             AppCtx.assets.open("$name.png").use { s ->
-                val opts = BitmapFactory.Options().apply { inPreferredConfig = Bitmap.Config.ARGB_8888; inScaled = false }
+                val opts = BitmapFactory.Options().apply {
+                    inPreferredConfig = Bitmap.Config.ARGB_8888
+                    inScaled = false
+                }
                 BitmapFactory.decodeStream(s, null, opts)?.copy(Bitmap.Config.ARGB_8888, false)
             }
-        } catch (_: Exception) { null }
+        } catch (_: Exception) {
+            null
+        }
     }
 }

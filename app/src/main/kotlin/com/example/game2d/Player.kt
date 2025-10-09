@@ -83,6 +83,10 @@ class Player(ctx: Context, sx: Float, sy: Float) {
     private var movingState = 0
     private var facing = 1
 
+    // Attack animation variables
+    private var attackAnimTimer = 0L
+    private var isAttacking = false
+
     init {
         // Get selected character from preferences
         val prefs = ctx.getSharedPreferences("game_prefs", Context.MODE_PRIVATE)
@@ -183,6 +187,21 @@ class Player(ctx: Context, sx: Float, sy: Float) {
         if (vy == 0f) vy = jumpPower
     }
 
+    // Attack method for boss fight
+    fun attack() {
+        // Trigger attack animation
+        if (!isAttacking) {
+            isAttacking = true
+            attackAnimTimer = System.currentTimeMillis()
+        }
+    }
+
+    // Knockback effect when hit by boss
+    fun applyKnockback(knockbackVx: Float, knockbackVy: Float) {
+        vx = knockbackVx
+        vy = knockbackVy
+    }
+
     fun update(dtMs: Long, map: TileMapInterface) {
         val dt = dtMs / 1000f
 
@@ -213,6 +232,11 @@ class Player(ctx: Context, sx: Float, sy: Float) {
             timer = 0
         }
         curFrame = curFrame % targetFrames
+
+        // Check attack animation timeout
+        if (isAttacking && (System.currentTimeMillis() - attackAnimTimer) > 300L) {
+            isAttacking = false
+        }
 
         updatePotionEffects()
     }

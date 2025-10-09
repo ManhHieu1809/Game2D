@@ -336,18 +336,18 @@ class TileMap(ctx: Context) : TileMapInterface {
         // Strategic monster placement - cân bằng độ khó
 
         // Area 1: Opening - tutorial enemy
-        monsters += Monster1(650f, groundTopY - 32f, patrolWidth = 80f, detectRange = 250f)
+        monsters += Monster1(650f, groundTopY - 32f, patrolWidth = 80f, detectRange = 250f, tileMap = this)
 
         // Area 2: Pipe section - guards
         monsters += Monster2(1050f, groundTopY - 34f * 1.6f, patrolWidth = 120f, scaleOverride = 1.6f)
-        monsters += Monster1(1300f, groundTopY - 32f, patrolWidth = 100f, detectRange = 280f)
+        monsters += Monster1(1300f, groundTopY - 32f, patrolWidth = 100f, detectRange = 280f, tileMap = this)
 
         // Area 3: Platform section - timing challenge
-        monsters += Monster1(1750f, groundTopY - 32f, patrolWidth = 120f, detectRange = 300f) // Guard platform area
+        monsters += Monster1(1750f, groundTopY - 32f, patrolWidth = 120f, detectRange = 300f, tileMap = this) // Guard platform area
         monsters += Monster2(2050f, groundTopY - 34f * 1.6f, patrolWidth = 100f, scaleOverride = 1.6f) // Near moving platforms
 
         // Area 4: Castle approach - bridge guards
-        monsters += Monster1(2800f, groundTopY - 32f, patrolWidth = 80f, detectRange = 250f) // Bridge guard 1
+        monsters += Monster1(2800f, groundTopY - 32f, patrolWidth = 80f, detectRange = 250f, tileMap = this) // Bridge guard 1
         monsters += Monster2(3000f, groundTopY - 34f * 1.6f, patrolWidth = 60f, scaleOverride = 1.6f) // Bridge guard 2
 
 //        // Area 5: Underground - patrol monsters
@@ -355,9 +355,9 @@ class TileMap(ctx: Context) : TileMapInterface {
         monsters += Monster2(3750f, groundTopY - 34f * 1.6f, patrolWidth = 140f, scaleOverride = 1.6f) // Near moving platform
 
         // Area 6: Final challenge - elite guards
-        monsters += Monster1(4200f, groundTopY - 32f, patrolWidth = 100f, detectRange = 350f) // Platform guardian
+        monsters += Monster1(4200f, groundTopY - 32f, patrolWidth = 100f, detectRange = 350f, tileMap = this) // Platform guardian
         monsters += Monster2(4500f, groundTopY - 34f * 1.6f, patrolWidth = 120f, scaleOverride = 1.6f) // Moving platform area
-        monsters += Monster1(4800f, groundTopY - 32f, patrolWidth = 150f, detectRange = 400f) // Final area guard
+        monsters += Monster1(4800f, groundTopY - 32f, patrolWidth = 150f, detectRange = 400f, tileMap = this) // Final area guard
 
         // Area 7: Castle - final boss approach
         monsters += Monster2(5300f, groundTopY - 34f * 1.6f, patrolWidth = 180f, scaleOverride = 1.6f) // Castle guardian
@@ -621,14 +621,13 @@ class TileMap(ctx: Context) : TileMapInterface {
         for (pipe in pipes) collided = handleSolidCollision(player, pipe) || collided
         for (brick in bricks) collided = handleSolidCollision(player, brick) || collided
 
-        // Hazards
+        // Hazards - just return collision status, don't handle respawn directly
         for (sp in spikes) if (sp.isHit(player)) return true
         for (sw in saws) if (sw.isHit(player)) return true
 
-        // World death
+        // World death - just signal collision, don't respawn here
         if (player.y + player.height > worldHeight) {
-            respawnPlayer(player)
-            collided = true
+            return true  // Just signal collision, don't respawn here
         }
 
         // Checkpoints
